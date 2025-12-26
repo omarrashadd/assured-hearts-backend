@@ -1,4 +1,5 @@
 const express = require('express');
+const { insertParent, insertProvider } = require('../db');
 
 const router = express.Router();
 
@@ -9,7 +10,7 @@ function hasRequired(body, fields) {
   return fields.every((f) => body[f]);
 }
 
-router.post('/parent', (req, res) => {
+router.post('/parent', async (req, res) => {
   console.log('Parent submission received:', req.body);
   
   if (!hasRequired(req.body, REQUIRED_PARENT_FIELDS)) {
@@ -25,11 +26,15 @@ router.post('/parent', (req, res) => {
     meta: req.body.meta || {},
   };
 
-  // TODO: Persist to database or send email/Slack notification.
+  try{
+    await insertParent(payload);
+  }catch(err){
+    console.error('Parent insert failed:', err);
+  }
   return res.status(200).json({ message: 'Parent submission received', data: payload });
 });
 
-router.post('/provider', (req, res) => {
+router.post('/provider', async (req, res) => {
   if (!hasRequired(req.body, REQUIRED_PROVIDER_FIELDS)) {
     return res.status(400).json({ error: 'Missing required provider fields' });
   }
@@ -42,7 +47,11 @@ router.post('/provider', (req, res) => {
     meta: req.body.meta || {},
   };
 
-  // TODO: Persist to database or send email/Slack notification.
+  try{
+    await insertProvider(payload);
+  }catch(err){
+    console.error('Provider insert failed:', err);
+  }
   return res.status(200).json({ message: 'Provider submission received', data: payload });
 });
 

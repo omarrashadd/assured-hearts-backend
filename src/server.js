@@ -6,6 +6,7 @@ const morgan = require('morgan');
 
 const healthRouter = require('./routes/health');
 const formsRouter = require('./routes/forms');
+const { init } = require('./db');
 
 const app = express();
 
@@ -17,6 +18,8 @@ app.use(helmet());
 app.use(cors({ origin: ORIGIN === '*' ? true : ORIGIN.split(',').map(s => s.trim()) }));
 app.use(express.json({ limit: '1mb' }));
 app.use(morgan(LOG_LEVEL));
+// Ensure DB tables are created if a DATABASE_URL is present
+init();
 
 app.use('/health', healthRouter);
 app.use('/forms', formsRouter);
