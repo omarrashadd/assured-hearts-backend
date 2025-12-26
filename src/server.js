@@ -21,6 +21,11 @@ app.use(morgan(LOG_LEVEL));
 app.use('/health', healthRouter);
 app.use('/forms', formsRouter);
 
+// Root endpoint for quick sanity checks
+app.get('/', (req, res) => {
+  res.json({ status: 'ok', service: 'Assured Hearts API' });
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
