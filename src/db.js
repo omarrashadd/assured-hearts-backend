@@ -11,32 +11,66 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
 async function init(){
   if(!pool) return;
-  const createUsers = `
-    CREATE TABLE IF NOT EXISTS users (
+  
+  const createParentsTable = `
+    CREATE TABLE IF NOT EXISTS parents (
       id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
       phone TEXT NOT NULL,
-      password_hash TEXT,
-      type TEXT NOT NULL DEFAULT 'parent',
       city TEXT,
       province TEXT,
+      password_hash TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
-  const createProviderApps = `
-    CREATE TABLE IF NOT EXISTS provider_applications (
+    
+  const createProvidersApplicationsTable = `
+    CREATE TABLE IF NOT EXISTS providers_applications (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      city TEXT,
+      province TEXT,
+      password_hash TEXT,
       experience TEXT,
-      availability JSONB,
+      experience_details TEXT,
+      has_cpr BOOLEAN DEFAULT false,
+      islamic_values BOOLEAN DEFAULT false,
       age_groups JSONB,
-      certifications TEXT,
+      availability JSONB,
+      references TEXT,
+      status TEXT DEFAULT 'pending',
+      applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      reviewed_at TIMESTAMP WITH TIME ZONE,
+      reviewed_by INTEGER
+    );`;
+    
+  const createProvidersTable = `
+    CREATE TABLE IF NOT EXISTS providers (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      city TEXT,
+      province TEXT,
+      password_hash TEXT,
+      experience TEXT,
+      experience_details TEXT,
+      has_cpr BOOLEAN DEFAULT false,
+      islamic_values BOOLEAN DEFAULT false,
+      age_groups JSONB,
+      availability JSONB,
+      references TEXT,
+      rating DECIMAL(3,2),
+      approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+
   const createChildren = `
     CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       name TEXT,
       ages JSONB,
       frequency TEXT,
@@ -44,6 +78,7 @@ async function init(){
       special_needs TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+    
   const createWaitlist = `
     CREATE TABLE IF NOT EXISTS waitlist (
       id SERIAL PRIMARY KEY,
@@ -51,52 +86,40 @@ async function init(){
       city TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+    
   const createRequests = `
     CREATE TABLE IF NOT EXISTS childcare_requests (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       child_id INTEGER REFERENCES children(id) ON DELETE CASCADE,
       location TEXT,
       status TEXT DEFAULT 'pending',
       notes TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+    
   const createSessions = `
     CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      provider_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
+      provider_id INTEGER REFERENCES providers(id) ON DELETE CASCADE,
       session_date DATE,
       start_time TIME,
       end_time TIME,
       status TEXT DEFAULT 'scheduled',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+    
   try{
-    await pool.query(createUsers);
-    await pool.query(createProviderApps);
+    await pool.query(createParentsTable);
+    await pool.query(createProvidersApplicationsTable);
+    await pool.query(createProvidersTable);
     await pool.query(createChildren);
     await pool.query(createWaitlist);
     await pool.query(createRequests);
     await pool.query(createSessions);
     
-    // Add name column to children if it doesn't exist
-    try {
-      await pool.query(`ALTER TABLE children ADD COLUMN name TEXT;`);
-    } catch(e) {
-      // Column might already exist, ignore
-    }
-    
-    // Add child_id column to childcare_requests if it doesn't exist
-    try {
-      await pool.query(`ALTER TABLE childcare_requests ADD COLUMN child_id INTEGER REFERENCES children(id) ON DELETE CASCADE;`);
-      console.log('[DB] Added child_id column to childcare_requests');
-    } catch(e) {
-      // Column might already exist, ignore
-      console.log('[DB] child_id column already exists');
-    }
-    
-    console.log('[DB] Tables ensured');
+    console.log('[DB] All tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
   }
@@ -107,49 +130,104 @@ async function hashPassword(password) {
   return bcrypt.hash(password, 10);
 }
 
+// Create parent account directly (for immediate access)
 async function createParentUser({ name, email, phone, password, city, province }){
   if(!pool) return;
   const password_hash = password ? await hashPassword(password) : null;
-  const sql = 'INSERT INTO users(name,email,phone,password_hash,type,city,province) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id';
-  const params = [name, email, phone, password_hash, 'parent', city, province];
+  const sql = 'INSERT INTO parents(name, email, phone, password_hash, city, province) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
+  const params = [name, email, phone, password_hash, city, province];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }
 
-async function createProviderUser({ name, email, phone, password, city, province }){
+// Create provider application (pending approval)
+async function createProviderApplication({ name, email, phone, password, experience, experience_details, has_cpr, islamic_values, age_groups, availability, references, city, province }){
   if(!pool) return;
   const password_hash = password ? await hashPassword(password) : null;
-  const sql = 'INSERT INTO users(name,email,phone,password_hash,type,city,province) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id';
-  const params = [name, email, phone, password_hash, 'provider', city, province];
+  const sql = `INSERT INTO providers_applications(name, email, phone, password_hash, experience, experience_details, has_cpr, islamic_values, age_groups, availability, references, city, province, status) 
+               VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending') RETURNING id`;
+  const params = [name, email, phone, password_hash, experience || null, experience_details || null, has_cpr || false, islamic_values || false, age_groups ? JSON.stringify(age_groups) : null, availability ? JSON.stringify(availability) : null, references || null, city, province];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }
 
-async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications }){
+// Approve a provider application and move to providers table
+async function approveProviderApplication(application_id){
   if(!pool) return;
-  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications) VALUES($1,$2,$3,$4,$5)';
-  const params = [user_id, experience || null, availability ? JSON.stringify(availability) : null, age_groups ? JSON.stringify(age_groups) : null, certifications || null];
-  return pool.query(sql, params);
+  try {
+    // Get the application details
+    const appSql = 'SELECT * FROM providers_applications WHERE id=$1';
+    const appResult = await pool.query(appSql, [application_id]);
+    const app = appResult.rows[0];
+    
+    if(!app) throw new Error('Application not found');
+    
+    // Insert into providers table
+    const providerSql = `INSERT INTO providers(name, email, phone, password_hash, experience, experience_details, has_cpr, islamic_values, age_groups, availability, references, city, province) 
+                         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`;
+    const providerParams = [app.name, app.email, app.phone, app.password_hash, app.experience, app.experience_details, app.has_cpr, app.islamic_values, app.age_groups, app.availability, app.references, app.city, app.province];
+    const providerResult = await pool.query(providerSql, providerParams);
+    const provider_id = providerResult.rows[0]?.id;
+    
+    // Update application status to approved
+    const updateSql = 'UPDATE providers_applications SET status=$1, reviewed_at=$2 WHERE id=$3';
+    await pool.query(updateSql, ['approved', new Date(), application_id]);
+    
+    return provider_id;
+  } catch(err) {
+    console.error('[DB] Approve provider application failed:', err);
+    throw err;
+  }
+}
+
+// Get pending provider applications
+async function getPendingProviderApplications(){
+  if(!pool) return [];
+  const sql = 'SELECT id, name, email, phone, experience, has_cpr, islamic_values, applied_at FROM providers_applications WHERE status=$1 ORDER BY applied_at ASC';
+  const result = await pool.query(sql, ['pending']);
+  return result.rows || [];
+}
+
+// Get provider application details
+async function getProviderApplicationDetails(application_id){
+  if(!pool) return null;
+  const sql = 'SELECT * FROM providers_applications WHERE id=$1';
+  const result = await pool.query(sql, [application_id]);
+  return result.rows[0] || null;
 }
 
 async function insertChildProfile({ user_id, name, ages, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
-  const sql = 'INSERT INTO children(user_id,name,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5,$6) RETURNING id';
+  const sql = 'INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
   const params = [user_id, name || null, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }
 
-async function findUserByEmail(email){
+async function findParentByEmail(email){
   if(!pool) return null;
-  const sql = 'SELECT id, name, email, phone, password_hash, type, city, province FROM users WHERE email=$1';
+  const sql = 'SELECT id, name, email, phone, password_hash, city, province FROM parents WHERE email=$1';
+  const result = await pool.query(sql, [email]);
+  return result.rows[0] || null;
+}
+
+async function findProviderApplicationByEmail(email){
+  if(!pool) return null;
+  const sql = 'SELECT id, name, email, phone, password_hash, status FROM providers_applications WHERE email=$1';
+  const result = await pool.query(sql, [email]);
+  return result.rows[0] || null;
+}
+
+async function findProviderByEmail(email){
+  if(!pool) return null;
+  const sql = 'SELECT id, name, email, phone, password_hash, city, province FROM providers WHERE email=$1';
   const result = await pool.query(sql, [email]);
   return result.rows[0] || null;
 }
 
 async function countProvidersByCity(city){
   if(!pool) return 0;
-  const sql = "SELECT COUNT(*) AS c FROM users WHERE type='provider' AND LOWER(city) = LOWER($1)";
+  const sql = "SELECT COUNT(*) AS c FROM providers WHERE LOWER(city) = LOWER($1)";
   const result = await pool.query(sql, [city]);
   return Number(result.rows[0]?.c || 0);
 }
@@ -163,7 +241,7 @@ async function insertWaitlistEntry({ email, city }){
 
 async function getParentChildren(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, name, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE user_id=$1 ORDER BY name ASC, created_at DESC';
+  const sql = 'SELECT id, name, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE parent_id=$1 ORDER BY name ASC, created_at DESC';
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
@@ -173,41 +251,41 @@ async function getOrCreateChild(user_id, childName){
   
   // If a name is provided, try to find existing child with that name
   if(childName && childName.trim()){
-    const findSql = 'SELECT id FROM children WHERE user_id=$1 AND name=$2 LIMIT 1';
+    const findSql = 'SELECT id FROM children WHERE parent_id=$1 AND name=$2 LIMIT 1';
     const findResult = await pool.query(findSql, [user_id, childName.trim()]);
     if(findResult.rows.length > 0){
       return findResult.rows[0].id;
     }
     
     // Create new child with this name
-    const createSql = 'INSERT INTO children(user_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
+    const createSql = 'INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
     const createResult = await pool.query(createSql, [user_id, childName.trim(), null, null, null, null]);
     return createResult.rows[0]?.id;
   }
   
   // If no name provided, create a generic child
-  const createSql = 'INSERT INTO children(user_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
+  const createSql = 'INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
   const createResult = await pool.query(createSql, [user_id, null, null, null, null, null]);
   return createResult.rows[0]?.id;
 }
 
 async function getParentProfile(user_id){
   if(!pool) return null;
-  const sql = 'SELECT id, name, email, phone, city, province, created_at FROM users WHERE id=$1 AND type=$2';
-  const result = await pool.query(sql, [user_id, 'parent']);
+  const sql = 'SELECT id, name, email, phone, city, province, created_at FROM parents WHERE id=$1';
+  const result = await pool.query(sql, [user_id]);
   return result.rows[0] || null;
 }
 
 async function insertChildcareRequest({ user_id, child_id, location, notes }){
   if(!pool) return;
-  const sql = 'INSERT INTO childcare_requests(user_id, child_id, location, notes) VALUES($1, $2, $3, $4) RETURNING id';
+  const sql = 'INSERT INTO childcare_requests(parent_id, child_id, location, notes) VALUES($1, $2, $3, $4) RETURNING id';
   const result = await pool.query(sql, [user_id, child_id || null, location, notes || null]);
   return result.rows[0]?.id;
 }
 
 async function getParentRequests(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, location, status, notes, created_at FROM childcare_requests WHERE user_id=$1 ORDER BY created_at DESC';
+  const sql = 'SELECT id, location, status, notes, created_at FROM childcare_requests WHERE parent_id=$1 ORDER BY created_at DESC';
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
@@ -216,14 +294,34 @@ async function getParentSessions(user_id){
   if(!pool) return [];
   const sql = `
     SELECT s.id, s.session_date, s.start_time, s.end_time, s.status, 
-           u.name as provider_name, u.city as provider_city
+           p.name as provider_name, p.city as provider_city
     FROM sessions s
-    LEFT JOIN users u ON s.provider_id = u.id
-    WHERE s.user_id=$1 AND s.session_date >= CURRENT_DATE
+    LEFT JOIN providers p ON s.provider_id = p.id
+    WHERE s.parent_id=$1 AND s.session_date >= CURRENT_DATE
     ORDER BY s.session_date ASC, s.start_time ASC
   `;
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions };
+module.exports = { 
+  pool, 
+  init, 
+  createParentUser, 
+  createProviderApplication,
+  approveProviderApplication,
+  getPendingProviderApplications,
+  getProviderApplicationDetails,
+  insertChildProfile, 
+  findParentByEmail,
+  findProviderApplicationByEmail,
+  findProviderByEmail,
+  countProvidersByCity, 
+  insertWaitlistEntry, 
+  getParentChildren, 
+  getParentProfile, 
+  getOrCreateChild, 
+  insertChildcareRequest, 
+  getParentRequests, 
+  getParentSessions 
+};

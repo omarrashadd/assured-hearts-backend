@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions } = require('../db');
+const { createParentUser, createProviderApplication, approveProviderApplication, getPendingProviderApplications, getProviderApplicationDetails, insertChildProfile, findParentByEmail, findProviderApplicationByEmail, findProviderByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions } = require('../db');
 
 const router = express.Router();
 
@@ -22,6 +22,15 @@ router.post('/parent', async (req, res) => {
   const { name, email, phone, password, city, province } = req.body;
   
   try{
+    // Check if email already exists
+    const existingParent = await findParentByEmail(email);
+    const existingApp = await findProviderApplicationByEmail(email);
+    const existingProvider = await findProviderByEmail(email);
+    
+    if(existingParent || existingApp || existingProvider) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    
     const userId = await createParentUser({ name, email, phone, password, city, province });
     console.log('Parent user created:', userId);
     return res.status(200).json({ message: 'Parent account created', userId });
@@ -33,35 +42,86 @@ router.post('/parent', async (req, res) => {
 });
 
 router.post('/provider', async (req, res) => {
-  console.log('Provider signup received:', { name: req.body.name, email: req.body.email });
+  console.log('Provider application received:', { name: req.body.name, email: req.body.email });
   
   if (!hasRequired(req.body, REQUIRED_PROVIDER_FIELDS)) {
     console.log('Missing fields. Required:', REQUIRED_PROVIDER_FIELDS, 'Received:', Object.keys(req.body));
     return res.status(400).json({ error: 'Missing required provider fields' });
   }
 
-  const { name, email, phone, password, experience, age_groups, certifications, city, province, meta } = req.body;
+  const { name, email, phone, password, experience, experience_details, has_cpr, islamic_values, age_groups, city, province, meta } = req.body;
   
   try{
-    // Create user account
-    const userId = await createProviderUser({ name, email, phone, password, city, province });
-    console.log('Provider user created:', userId);
+    // Check if email already exists anywhere
+    const existingParent = await findParentByEmail(email);
+    const existingApp = await findProviderApplicationByEmail(email);
+    const existingProvider = await findProviderByEmail(email);
     
-    // Store application details
-    await insertProviderApplication({
-      user_id: userId,
+    if(existingParent || existingApp || existingProvider) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    
+    // Create provider application (pending approval)
+    const appId = await createProviderApplication({
+      name,
+      email,
+      phone,
+      password,
       experience,
-      availability: meta?.availability,
+      experience_details,
+      has_cpr,
+      islamic_values,
       age_groups,
-      certifications
+      availability: meta?.availability,
+      references: meta?.references,
+      city,
+      province
     });
-    console.log('Provider application created for user:', userId);
+    console.log('Provider application created:', appId);
     
-    return res.status(200).json({ message: 'Provider account and application created', userId });
+    return res.status(200).json({ 
+      message: 'Provider application submitted successfully. We will review your application and contact you soon.', 
+      applicationId: appId 
+    });
   }catch(err){
-    console.error('Provider create failed:', err);
+    console.error('Provider application create failed:', err);
     if(err.code === '23505') return res.status(400).json({ error: 'Email already in use' });
-    return res.status(500).json({ error: 'Failed to create account' });
+    return res.status(500).json({ error: 'Failed to submit application' });
+  }
+});
+
+// Admin endpoint to get pending provider applications
+router.get('/providers/applications/pending', async (req, res) => {
+  try{
+    const apps = await getPendingProviderApplications();
+    return res.status(200).json({ applications: apps });
+  }catch(err){
+    console.error('Failed to get pending applications:', err);
+    return res.status(500).json({ error: 'Failed to retrieve applications' });
+  }
+});
+
+// Admin endpoint to approve a provider application
+router.post('/providers/applications/:id/approve', async (req, res) => {
+  const { id } = req.params;
+  
+  try{
+    const appDetails = await getProviderApplicationDetails(id);
+    if(!appDetails) {
+      return res.status(404).json({ error: 'Application not found' });
+    }
+    
+    const provider_id = await approveProviderApplication(id);
+    console.log('Provider approved:', provider_id, 'from application:', id);
+    
+    return res.status(200).json({ 
+      message: 'Provider approved and activated', 
+      providerId: provider_id,
+      providerName: appDetails.name
+    });
+  }catch(err){
+    console.error('Provider approval failed:', err);
+    return res.status(500).json({ error: 'Failed to approve provider' });
   }
 });
 
