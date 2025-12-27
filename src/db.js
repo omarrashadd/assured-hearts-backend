@@ -37,6 +37,7 @@ async function init(){
     CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT,
       ages JSONB,
       frequency TEXT,
       preferred_schedule TEXT,
@@ -78,6 +79,14 @@ async function init(){
     await pool.query(createWaitlist);
     await pool.query(createRequests);
     await pool.query(createSessions);
+    
+    // Add name column to children if it doesn't exist
+    try {
+      await pool.query(`ALTER TABLE children ADD COLUMN name TEXT;`);
+    } catch(e) {
+      // Column might already exist, ignore
+    }
+    
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
@@ -114,10 +123,10 @@ async function insertProviderApplication({ user_id, experience, availability, ag
   return pool.query(sql, params);
 }
 
-async function insertChildProfile({ user_id, ages, frequency, preferred_schedule, special_needs }){
+async function insertChildProfile({ user_id, name, ages, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
-  const sql = 'INSERT INTO children(user_id,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5) RETURNING id';
-  const params = [user_id, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
+  const sql = 'INSERT INTO children(user_id,name,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5,$6) RETURNING id';
+  const params = [user_id, name || null, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }
@@ -145,24 +154,31 @@ async function insertWaitlistEntry({ email, city }){
 
 async function getParentChildren(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE user_id=$1 ORDER BY created_at DESC';
+  const sql = 'SELECT id, name, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE user_id=$1 ORDER BY name ASC, created_at DESC';
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
 
 async function getOrCreateChild(user_id, childName){
   if(!pool) return null;
-  // First try to find a child with this name
-  const findSql = 'SELECT id FROM children WHERE user_id=$1 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT 1';
-  const findResult = await pool.query(findSql, [user_id]);
   
-  if(findResult.rows.length > 0){
-    return findResult.rows[0].id;
+  // If a name is provided, try to find existing child with that name
+  if(childName && childName.trim()){
+    const findSql = 'SELECT id FROM children WHERE user_id=$1 AND name=$2 LIMIT 1';
+    const findResult = await pool.query(findSql, [user_id, childName.trim()]);
+    if(findResult.rows.length > 0){
+      return findResult.rows[0].id;
+    }
+    
+    // Create new child with this name
+    const createSql = 'INSERT INTO children(user_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
+    const createResult = await pool.query(createSql, [user_id, childName.trim(), null, null, null, null]);
+    return createResult.rows[0]?.id;
   }
   
-  // Create a new child if none exists
-  const createSql = 'INSERT INTO children(user_id, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5) RETURNING id';
-  const createResult = await pool.query(createSql, [user_id, null, null, null, null]);
+  // If no name provided, create a generic child
+  const createSql = 'INSERT INTO children(user_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
+  const createResult = await pool.query(createSql, [user_id, null, null, null, null, null]);
   return createResult.rows[0]?.id;
 }
 
