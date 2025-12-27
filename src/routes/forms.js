@@ -43,13 +43,18 @@ router.post('/parent', async (req, res) => {
 
 router.post('/provider', async (req, res) => {
   console.log('Provider application received:', { name: req.body.name, email: req.body.email });
+  console.log('Full request body:', JSON.stringify(req.body, null, 2));
   
   if (!hasRequired(req.body, REQUIRED_PROVIDER_FIELDS)) {
     console.log('Missing fields. Required:', REQUIRED_PROVIDER_FIELDS, 'Received:', Object.keys(req.body));
     return res.status(400).json({ error: 'Missing required provider fields' });
   }
 
-  const { name, email, phone, password, experience, experience_details, has_cpr, islamic_values, age_groups, city, province, meta } = req.body;
+  const { name, email, phone, password, experience, experience_details, has_cpr, islamic_values, age_groups, meta } = req.body;
+  
+  // Extract city and province from meta if they're nested there
+  const city = req.body.city || meta?.city;
+  const province = req.body.province || meta?.province;
   
   try{
     // Check if email already exists anywhere
@@ -85,8 +90,9 @@ router.post('/provider', async (req, res) => {
     });
   }catch(err){
     console.error('Provider application create failed:', err);
+    console.error('Error stack:', err.stack);
     if(err.code === '23505') return res.status(400).json({ error: 'Email already in use' });
-    return res.status(500).json({ error: 'Failed to submit application' });
+    return res.status(500).json({ error: 'Failed to submit application: ' + err.message });
   }
 });
 
