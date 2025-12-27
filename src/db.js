@@ -37,6 +37,7 @@ async function init(){
     CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT,
       ages JSONB,
       frequency TEXT,
       preferred_schedule TEXT,
@@ -91,10 +92,10 @@ async function insertProviderApplication({ user_id, experience, availability, ag
   return pool.query(sql, params);
 }
 
-async function insertChildProfile({ user_id, ages, frequency, preferred_schedule, special_needs }){
+async function insertChildProfile({ user_id, name, ages, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
-  const sql = 'INSERT INTO children(user_id,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5) RETURNING id';
-  const params = [user_id, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
+  const sql = 'INSERT INTO children(user_id,name,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5,$6) RETURNING id';
+  const params = [user_id, name || null, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }

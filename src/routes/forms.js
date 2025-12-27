@@ -72,7 +72,7 @@ router.post('/children', async (req, res) => {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
-  const { user_id, numChildren, frequency, preferredSchedule, specialNeeds } = req.body;
+  const { user_id, numChildren, name, frequency, preferredSchedule, specialNeeds } = req.body;
   
   // Collect ages from dynamic fields (child1Age, child2Age, etc.)
   const ages = [];
@@ -84,6 +84,7 @@ router.post('/children', async (req, res) => {
   try{
     const childId = await insertChildProfile({
       user_id,
+      name,
       ages,
       frequency,
       preferred_schedule: preferredSchedule,
