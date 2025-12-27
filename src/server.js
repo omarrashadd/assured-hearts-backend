@@ -6,7 +6,7 @@ const morgan = require('morgan');
 
 const healthRouter = require('./routes/health');
 const formsRouter = require('./routes/forms');
-const { init } = require('./db');
+const { init, pool } = require('./db');
 
 const app = express();
 
@@ -27,6 +27,19 @@ app.use('/forms', formsRouter);
 // Root endpoint for quick sanity checks
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'Assured Hearts API' });
+});
+
+// Simple stats endpoint (duplicate location to avoid router export issues)
+app.get('/forms/stats', async (req, res) => {
+  try{
+    if(!pool) return res.json({ parents: null, providers: null });
+    const p = await pool.query('SELECT COUNT(*) AS c FROM parents');
+    const r = await pool.query('SELECT COUNT(*) AS c FROM providers');
+    return res.json({ parents: Number(p.rows[0].c), providers: Number(r.rows[0].c) });
+  }catch(err){
+    console.error('Stats error (server):', err);
+    return res.status(500).json({ error: 'Stats failed' });
+  }
 });
 
 app.use((req, res) => {
