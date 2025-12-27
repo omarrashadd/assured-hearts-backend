@@ -78,7 +78,7 @@ router.post('/provider', async (req, res) => {
       islamic_values,
       age_groups,
       availability: meta?.availability,
-      references: meta?.references,
+      provider_references: meta?.references,
       city,
       province
     });

@@ -61,7 +61,7 @@ async function init(){
       islamic_values BOOLEAN DEFAULT false,
       age_groups JSONB,
       availability JSONB,
-      references TEXT,
+      provider_references TEXT,
       status TEXT DEFAULT 'pending',
       applied_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       reviewed_at TIMESTAMP WITH TIME ZONE,
@@ -83,7 +83,7 @@ async function init(){
       islamic_values BOOLEAN DEFAULT false,
       age_groups JSONB,
       availability JSONB,
-      references TEXT,
+      provider_references TEXT,
       rating DECIMAL(3,2),
       approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -171,12 +171,12 @@ async function createParentUser({ name, email, phone, password, city, province }
 }
 
 // Create provider application (pending approval)
-async function createProviderApplication({ name, email, phone, password, experience, experience_details, has_cpr, islamic_values, age_groups, availability, references, city, province }){
+async function createProviderApplication({ name, email, phone, password, experience, experience_details, has_cpr, islamic_values, age_groups, availability, provider_references, city, province }){
   if(!pool) return;
   const password_hash = password ? await hashPassword(password) : null;
-  const sql = `INSERT INTO providers_applications(name, email, phone, password_hash, experience, experience_details, has_cpr, islamic_values, age_groups, availability, references, city, province, status) 
+  const sql = `INSERT INTO providers_applications(name, email, phone, password_hash, experience, experience_details, has_cpr, islamic_values, age_groups, availability, provider_references, city, province, status) 
                VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'pending') RETURNING id`;
-  const params = [name, email, phone, password_hash, experience || null, experience_details || null, has_cpr || false, islamic_values || false, age_groups ? JSON.stringify(age_groups) : null, availability ? JSON.stringify(availability) : null, references || null, city, province];
+  const params = [name, email, phone, password_hash, experience || null, experience_details || null, has_cpr || false, islamic_values || false, age_groups ? JSON.stringify(age_groups) : null, availability ? JSON.stringify(availability) : null, provider_references || null, city, province];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }
@@ -193,9 +193,9 @@ async function approveProviderApplication(application_id){
     if(!app) throw new Error('Application not found');
     
     // Insert into providers table
-    const providerSql = `INSERT INTO providers(name, email, phone, password_hash, experience, experience_details, has_cpr, islamic_values, age_groups, availability, references, city, province) 
-                         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`;
-    const providerParams = [app.name, app.email, app.phone, app.password_hash, app.experience, app.experience_details, app.has_cpr, app.islamic_values, app.age_groups, app.availability, app.references, app.city, app.province];
+    const providerSql = `INSERT INTO providers(name, email, phone, password_hash, experience, experience_details, has_cpr, islamic_values, age_groups, availability, provider_references, city, province) 
+               VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`;
+    const providerParams = [app.name, app.email, app.phone, app.password_hash, app.experience, app.experience_details, app.has_cpr, app.islamic_values, app.age_groups, app.availability, app.provider_references, app.city, app.province];
     const providerResult = await pool.query(providerSql, providerParams);
     const provider_id = providerResult.rows[0]?.id;
     
