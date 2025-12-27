@@ -29,7 +29,7 @@ async function init(){
   }
   
   const createParentsTable = `
-    CREATE TABLE IF NOT EXISTS parents (
+    CREATE TABLE parents (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -41,7 +41,7 @@ async function init(){
     );`;
     
   const createProvidersApplicationsTable = `
-    CREATE TABLE IF NOT EXISTS providers_applications (
+    CREATE TABLE providers_applications (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -63,7 +63,7 @@ async function init(){
     );`;
     
   const createProvidersTable = `
-    CREATE TABLE IF NOT EXISTS providers (
+    CREATE TABLE providers (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -84,7 +84,7 @@ async function init(){
     );`;
 
   const createChildren = `
-    CREATE TABLE IF NOT EXISTS children (
+    CREATE TABLE children (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       name TEXT,
@@ -96,7 +96,7 @@ async function init(){
     );`;
     
   const createWaitlist = `
-    CREATE TABLE IF NOT EXISTS waitlist (
+    CREATE TABLE waitlist (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL,
       city TEXT NOT NULL,
@@ -104,7 +104,7 @@ async function init(){
     );`;
     
   const createRequests = `
-    CREATE TABLE IF NOT EXISTS childcare_requests (
+    CREATE TABLE childcare_requests (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       child_id INTEGER REFERENCES children(id) ON DELETE CASCADE,
@@ -115,7 +115,7 @@ async function init(){
     );`;
     
   const createSessions = `
-    CREATE TABLE IF NOT EXISTS sessions (
+    CREATE TABLE sessions (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       provider_id INTEGER REFERENCES providers(id) ON DELETE CASCADE,
