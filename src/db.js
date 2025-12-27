@@ -11,6 +11,26 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
 async function init(){
   if(!pool) return;
+  
+  try {
+    // Add user_id column to providers table if it doesn't exist (migration)
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name='providers' AND column_name='user_id'
+        ) THEN
+          ALTER TABLE providers ADD COLUMN user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE;
+          CREATE INDEX IF NOT EXISTS idx_providers_user_id ON providers(user_id);
+        END IF;
+      END $$;
+    `);
+    console.log('[DB] Migration check complete');
+  } catch(err) {
+    console.error('[DB] Migration failed:', err.message);
+  }
+  
   const createUsers = `
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
