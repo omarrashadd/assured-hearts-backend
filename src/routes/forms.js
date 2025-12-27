@@ -33,19 +33,25 @@ router.post('/parent', async (req, res) => {
 });
 
 router.post('/provider', async (req, res) => {
-  console.log('Provider signup received:', { name: req.body.name, email: req.body.email });
+  console.log('Provider signup received:', { name: req.body.name, email: req.body.email, meta: req.body.meta });
   
   if (!hasRequired(req.body, REQUIRED_PROVIDER_FIELDS)) {
     console.log('Missing fields. Required:', REQUIRED_PROVIDER_FIELDS, 'Received:', Object.keys(req.body));
     return res.status(400).json({ error: 'Missing required provider fields' });
   }
 
-  const { name, email, phone, password, experience, age_groups, certifications, city, province, meta } = req.body;
+  const { name, email, phone, password, experience, age_groups, certifications, meta } = req.body;
+  
+  // Extract city/province from meta (frontend sends them there)
+  const city = meta?.city || req.body.city || null;
+  const province = meta?.province || req.body.province || null;
+  
+  console.log('Extracted location:', { city, province });
   
   try{
-    // Create user account
+    // Create user account with city/province
     const userId = await createProviderUser({ name, email, phone, password, city, province });
-    console.log('Provider user created:', userId);
+    console.log('Provider user created:', userId, 'with location:', city, province);
     
     // Store application details
     await insertProviderApplication({
