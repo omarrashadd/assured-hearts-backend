@@ -217,11 +217,17 @@ async function approveApplication(applicationId){
   }
   
   console.log('[DB] Approving application:', applicationId, 'for user:', app.user_id, app.name);
+  console.log('[DB] Age groups type:', typeof app.age_groups, app.age_groups);
+  console.log('[DB] Availability type:', typeof app.availability, app.availability);
+  
+  // Ensure JSONB fields are properly formatted (convert to JSON string if they're objects)
+  const ageGroupsJson = app.age_groups ? (typeof app.age_groups === 'string' ? app.age_groups : JSON.stringify(app.age_groups)) : null;
+  const availabilityJson = app.availability ? (typeof app.availability === 'string' ? app.availability : JSON.stringify(app.availability)) : null;
   
   // Insert into providers table
   const insertSql = `
     INSERT INTO providers (user_id, name, email, phone, city, province, experience, certifications, age_groups, availability)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
     ON CONFLICT (user_id) DO UPDATE SET
       name = EXCLUDED.name,
       email = EXCLUDED.email,
@@ -237,7 +243,7 @@ async function approveApplication(applicationId){
   `;
   const result = await pool.query(insertSql, [
     app.user_id, app.name, app.email, app.phone, app.city, app.province,
-    app.experience, app.certifications, app.age_groups, app.availability
+    app.experience, app.certifications, ageGroupsJson, availabilityJson
   ]);
   
   const providerId = result.rows[0]?.id;
