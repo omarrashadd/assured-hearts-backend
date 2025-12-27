@@ -120,4 +120,18 @@ async function insertWaitlistEntry({ email, city }){
   return result.rows[0]?.id;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry };
+async function getParentChildren(user_id){
+  if(!pool) return [];
+  const sql = 'SELECT id, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE user_id=$1 ORDER BY created_at DESC';
+  const result = await pool.query(sql, [user_id]);
+  return result.rows || [];
+}
+
+async function getParentProfile(user_id){
+  if(!pool) return null;
+  const sql = 'SELECT id, name, email, phone, city, province, created_at FROM users WHERE id=$1 AND type=$2';
+  const result = await pool.query(sql, [user_id, 'parent']);
+  return result.rows[0] || null;
+}
+
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile };

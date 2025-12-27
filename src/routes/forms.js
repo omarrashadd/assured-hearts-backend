@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile } = require('../db');
 
 const router = express.Router();
 
@@ -113,40 +113,24 @@ router.post('/waitlist', async (req, res) => {
   }
 });
 
+// Parent dashboard: get parent profile + children
+router.get('/parent/:user_id', async (req, res) => {
+  const userId = parseInt(req.params.user_id);
+  if(!userId || isNaN(userId)){
+    return res.status(400).json({ error: 'Invalid user ID' });
+  }
+  try{
+    const profile = await getParentProfile(userId);
+    if(!profile){
+      return res.status(404).json({ error: 'Parent profile not found' });
+    }
+    const children = await getParentChildren(userId);
+    return res.json({ profile, children });
+  }catch(err){
+    console.error('Parent dashboard fetch failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch dashboard' });
+  }
+});
+
 module.exports = router;
 
-// Login endpoint
-router.post('/login', async (req, res) => {
-  const { email, password } = req.body || {};
-  if(!email || !password){
-    return res.status(400).json({ error: 'Email and password are required' });
-  }
-  try{
-    const user = await findUserByEmail(email);
-    if(!user || !user.password_hash){
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if(!ok){
-      return res.status(401).json({ error: 'Invalid credentials' });
-    }
-    return res.json({ userId: user.id, name: user.name, type: user.type, city: user.city, province: user.province });
-  }catch(err){
-    console.error('Login error:', err);
-    return res.status(500).json({ error: 'Login failed' });
-  }
-});
-
-// Optional: simple stats endpoint to verify DB inserts
-router.get('/stats', async (req, res) => {
-  try{
-    const { pool } = require('../db');
-    if(!pool) return res.json({ parents: null, providers: null });
-    const p = await pool.query('SELECT COUNT(*) AS c FROM parents');
-    const r = await pool.query('SELECT COUNT(*) AS c FROM providers');
-    return res.json({ parents: Number(p.rows[0].c), providers: Number(r.rows[0].c) });
-  }catch(err){
-    console.error('Stats error:', err);
-    return res.status(500).json({ error: 'Stats failed' });
-  }
-});
