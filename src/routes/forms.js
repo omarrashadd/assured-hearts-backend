@@ -113,6 +113,28 @@ router.post('/waitlist', async (req, res) => {
   }
 });
 
+// Login endpoint
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body || {};
+  if(!email || !password){
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+  try{
+    const user = await findUserByEmail(email);
+    if(!user || !user.password_hash){
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if(!ok){
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    return res.json({ userId: user.id, name: user.name, type: user.type, city: user.city, province: user.province });
+  }catch(err){
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'Login failed' });
+  }
+});
+
 // Parent dashboard: get parent profile + children
 router.get('/parent/:user_id', async (req, res) => {
   const userId = parseInt(req.params.user_id);
