@@ -33,13 +33,10 @@ router.get('/list', async (req, res) => {
       return res.json({ caregivers: [] });
     }
     const sql = `
-      SELECT u.id, u.name, u.city, u.province,
-             COALESCE(p.experience, '') AS experience,
-             COALESCE(p.certifications, '') AS certifications
-      FROM users u
-      LEFT JOIN provider_applications p ON p.user_id = u.id
-      WHERE u.type='provider' AND LOWER(u.city) = LOWER($1)
-      ORDER BY u.created_at DESC
+      SELECT id, name, city, province, experience, certifications
+      FROM providers
+      WHERE LOWER(city) = LOWER($1)
+      ORDER BY approved_at DESC, created_at DESC
       LIMIT $2`;
     const { rows } = await pool.query(sql, [city, limit]);
     return res.json({ caregivers: rows });
