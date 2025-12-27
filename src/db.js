@@ -57,6 +57,7 @@ async function init(){
     CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      name TEXT,
       ages JSONB,
       frequency TEXT,
       preferred_schedule TEXT,
@@ -116,6 +117,14 @@ async function init(){
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
+    
+    // Migration: Add name column to children table if it doesn't exist
+    try{
+      await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS name TEXT;`);
+      console.log('[DB] Added name column to children table');
+    }catch(migErr){
+      console.log('[DB] Add name column error:', migErr.message);
+    }
     
     // Migration: Fix foreign key constraint on children table to point to users, not parents
     try{
@@ -219,7 +228,7 @@ async function insertWaitlistEntry({ email, city }){
 
 async function getParentChildren(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE parent_id=$1 ORDER BY created_at DESC';
+  const sql = 'SELECT id, name, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE parent_id=$1 ORDER BY created_at DESC';
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
@@ -242,15 +251,15 @@ async function getOrCreateChild(user_id, childName){
   
   // If a name is provided, try to find existing child with that name
   if(childName && childName.trim()){
-    const findSql = 'SELECT id FROM children WHERE parent_id=$1 LIMIT 1';
-    const findResult = await pool.query(findSql, [user_id]);
+    const findSql = 'SELECT id FROM children WHERE parent_id=$1 AND name=$2 LIMIT 1';
+    const findResult = await pool.query(findSql, [user_id, childName.trim()]);
     if(findResult.rows.length > 0){
       return findResult.rows[0].id;
     }
     
-    // Create new child
-    const createSql = 'INSERT INTO children(parent_id, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5) RETURNING id';
-    const createResult = await pool.query(createSql, [user_id, null, null, null, null]);
+    // Create new child with name
+    const createSql = 'INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
+    const createResult = await pool.query(createSql, [user_id, childName.trim(), null, null, null, null]);
     return createResult.rows[0]?.id;
   }
   
