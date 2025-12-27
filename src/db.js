@@ -103,9 +103,11 @@ async function createProviderUser({ name, email, phone, password, city, province
 
 async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications }){
   if(!pool) return;
-  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications) VALUES($1,$2,$3,$4,$5)';
+  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications) VALUES($1,$2,$3,$4,$5) RETURNING id';
   const params = [user_id, experience || null, availability ? JSON.stringify(availability) : null, age_groups ? JSON.stringify(age_groups) : null, certifications || null];
-  return pool.query(sql, params);
+  const result = await pool.query(sql, params);
+  console.log('[DB] Provider application created:', result.rows[0]?.id, 'for user:', user_id);
+  return result.rows[0]?.id;
 }
 
 async function insertChildProfile({ user_id, ages, frequency, preferred_schedule, special_needs }){
@@ -189,13 +191,28 @@ async function approveApplication(applicationId){
   
   // Get application details
   const app = await getApplicationDetails(applicationId);
-  if(!app) throw new Error('Application not found');
+  if(!app) {
+    console.log('[DB] Application not found:', applicationId);
+    throw new Error('Application not found');
+  }
+  
+  console.log('[DB] Approving application:', applicationId, 'for user:', app.user_id, app.name);
   
   // Insert into providers table
   const insertSql = `
     INSERT INTO providers (user_id, name, email, phone, city, province, experience, certifications, age_groups, availability)
     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-    ON CONFLICT (user_id) DO NOTHING
+    ON CONFLICT (user_id) DO UPDATE SET
+      name = EXCLUDED.name,
+      email = EXCLUDED.email,
+      phone = EXCLUDED.phone,
+      city = EXCLUDED.city,
+      province = EXCLUDED.province,
+      experience = EXCLUDED.experience,
+      certifications = EXCLUDED.certifications,
+      age_groups = EXCLUDED.age_groups,
+      availability = EXCLUDED.availability,
+      approved_at = NOW()
     RETURNING id
   `;
   const result = await pool.query(insertSql, [
@@ -203,7 +220,9 @@ async function approveApplication(applicationId){
     app.experience, app.certifications, app.age_groups, app.availability
   ]);
   
-  return result.rows[0]?.id || null;
+  const providerId = result.rows[0]?.id;
+  console.log('[DB] Provider created/updated:', providerId);
+  return providerId;
 }
 
 module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getPendingApplications, getApplicationDetails, approveApplication };
