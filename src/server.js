@@ -33,9 +33,9 @@ app.get('/', (req, res) => {
 app.get('/forms/stats', async (req, res) => {
   try{
     if(!pool) return res.json({ parents: null, providers: null });
-    const p = await pool.query('SELECT COUNT(*) AS c FROM parents');
-    const r = await pool.query('SELECT COUNT(*) AS c FROM providers');
-    return res.json({ parents: Number(p.rows[0].c), providers: Number(r.rows[0].c) });
+    const p = await pool.query('SELECT COUNT(*) AS c FROM users WHERE type=\'parent\'');
+    const prov = await pool.query('SELECT COUNT(*) AS c FROM users WHERE type=\'provider\'');
+    return res.json({ parents: Number(p.rows[0].c), providers: Number(prov.rows[0].c) });
   }catch(err){
     console.error('Stats error (server):', err);
     return res.status(500).json({ error: 'Stats failed' });
@@ -46,8 +46,8 @@ app.get('/forms/stats', async (req, res) => {
 app.get('/forms/recent', async (req, res) => {
   try{
     if(!pool) return res.json({ parents: [], providers: [] });
-    const parents = await pool.query('SELECT id, name, email, phone, city, province, created_at FROM parents ORDER BY created_at DESC LIMIT 5');
-    const providers = await pool.query('SELECT id, name, email, phone, experience, city, province, created_at FROM providers ORDER BY created_at DESC LIMIT 5');
+    const parents = await pool.query('SELECT id, name, email, phone, city, province, created_at FROM users WHERE type=\'parent\' ORDER BY created_at DESC LIMIT 5');
+    const providers = await pool.query('SELECT u.id, u.name, u.email, u.phone, u.city, u.province, p.experience, p.age_groups, u.created_at FROM users u LEFT JOIN provider_applications p ON u.id=p.user_id WHERE u.type=\'provider\' ORDER BY u.created_at DESC LIMIT 5');
     return res.json({ parents: parents.rows, providers: providers.rows });
   }catch(err){
     console.error('Recent error:', err);

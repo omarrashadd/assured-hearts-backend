@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+const bcrypt = require('bcrypt');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 
@@ -10,53 +11,65 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
 async function init(){
   if(!pool) return;
-  const createParents = `
-    CREATE TABLE IF NOT EXISTS parents (
+  const createUsers = `
+    CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
-      email TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
       phone TEXT NOT NULL,
-      children JSONB,
+      password_hash TEXT,
+      type TEXT NOT NULL DEFAULT 'parent',
       city TEXT,
       province TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
-  const createProviders = `
-    CREATE TABLE IF NOT EXISTS providers (
+  const createProviderApps = `
+    CREATE TABLE IF NOT EXISTS provider_applications (
       id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL,
-      phone TEXT NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       experience TEXT,
-      city TEXT,
-      province TEXT,
+      availability JSONB,
+      age_groups JSONB,
+      certifications TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
   try{
-    await pool.query(createParents);
-    await pool.query(createProviders);
+    await pool.query(createUsers);
+    await pool.query(createProviderApps);
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
   }
 }
 
-async function insertParent({ name, email, phone, children, meta }){
+// Hash password helper
+async function hashPassword(password) {
+  return bcrypt.hash(password, 10);
+}
+
+async function createParentUser({ name, email, phone, password, city, province }){
   if(!pool) return;
-  const city = meta?.city || null;
-  const province = meta?.province || null;
-  const sql = 'INSERT INTO parents(name,email,phone,children,city,province) VALUES($1,$2,$3,$4,$5,$6)';
-  const params = [name, email, phone, children ? JSON.stringify(children) : null, city, province];
+  const password_hash = password ? await hashPassword(password) : null;
+  const sql = 'INSERT INTO users(name,email,phone,password_hash,type,city,province) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id';
+  const params = [name, email, phone, password_hash, 'parent', city, province];
+  const result = await pool.query(sql, params);
+  return result.rows[0]?.id;
+}
+
+async function createProviderUser({ name, email, phone, password, city, province }){
+  if(!pool) return;
+  const password_hash = password ? await hashPassword(password) : null;
+  const sql = 'INSERT INTO users(name,email,phone,password_hash,type,city,province) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id';
+  const params = [name, email, phone, password_hash, 'provider', city, province];
+  const result = await pool.query(sql, params);
+  return result.rows[0]?.id;
+}
+
+async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications }){
+  if(!pool) return;
+  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications) VALUES($1,$2,$3,$4,$5)';
+  const params = [user_id, experience || null, availability ? JSON.stringify(availability) : null, age_groups ? JSON.stringify(age_groups) : null, certifications || null];
   return pool.query(sql, params);
 }
 
-async function insertProvider({ name, email, phone, experience, meta }){
-  if(!pool) return;
-  const city = meta?.city || null;
-  const province = meta?.province || null;
-  const sql = 'INSERT INTO providers(name,email,phone,experience,city,province) VALUES($1,$2,$3,$4,$5,$6)';
-  const params = [name, email, phone, experience || null, city, province];
-  return pool.query(sql, params);
-}
-
-module.exports = { pool, init, insertParent, insertProvider };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication };
