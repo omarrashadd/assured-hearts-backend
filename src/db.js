@@ -117,15 +117,15 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
-    // Migration: Rename user_id to parent_id in childcare_requests if needed
+    // Migration: Add parent_id column to childcare_requests if it doesn't exist
     try{
       await pool.query(`
         ALTER TABLE childcare_requests 
-        RENAME COLUMN user_id TO parent_id;
+        ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
       `);
-      console.log('[DB] Migrated childcare_requests.user_id to parent_id');
+      console.log('[DB] Added parent_id column to childcare_requests');
     }catch(migErr){
-      // Column already renamed or doesn't exist, that's fine
+      console.log('[DB] parent_id column migration skipped:', migErr.message);
     }
     
   }catch(err){
