@@ -116,6 +116,18 @@ async function init(){
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
+    
+    // Migration: Rename user_id to parent_id in childcare_requests if needed
+    try{
+      await pool.query(`
+        ALTER TABLE childcare_requests 
+        RENAME COLUMN user_id TO parent_id;
+      `);
+      console.log('[DB] Migrated childcare_requests.user_id to parent_id');
+    }catch(migErr){
+      // Column already renamed or doesn't exist, that's fine
+    }
+    
   }catch(err){
     console.error('[DB] Init failed', err);
   }
