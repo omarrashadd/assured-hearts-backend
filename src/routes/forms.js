@@ -183,22 +183,27 @@ router.put('/child/:child_id', async (req, res) => {
 // Create childcare request
 router.post('/request', async (req, res) => {
   try {
-    const { user_id, location, notes, childName } = req.body;
+    const { user_id, child_id, location, notes, childName } = req.body;
+    console.log('Request body:', { user_id, child_id, location, notes, childName });
+    
     if(!user_id || !location){
-      return res.status(400).json({ error: 'Missing required fields' });
+      return res.status(400).json({ error: 'Missing required fields: user_id and location' });
     }
     
-    // Get or create child
-    let childId = null;
-    if(childName){
-      childId = await getOrCreateChild(user_id, childName);
+    // Get or create child if childName is provided
+    let finalChildId = child_id ? parseInt(child_id) : null;
+    if(childName && !finalChildId){
+      console.log('Creating new child with name:', childName);
+      finalChildId = await getOrCreateChild(user_id, childName);
+      console.log('Created/found child ID:', finalChildId);
     }
     
-    const id = await insertChildcareRequest({ user_id, child_id: childId, location, notes });
+    const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes });
+    console.log('Created request ID:', id);
     res.json({ success: true, id });
   } catch (err) {
     console.error('Error creating childcare request:', err);
-    res.status(500).json({ error: 'Failed to create request' });
+    res.status(500).json({ error: 'Failed to create request: ' + err.message });
   }
 });
 
