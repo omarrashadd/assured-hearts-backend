@@ -56,7 +56,7 @@ async function init(){
   const createChildren = `
     CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
-      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       ages JSONB,
       frequency TEXT,
       preferred_schedule TEXT,
@@ -178,7 +178,7 @@ async function insertProviderApplication({ user_id, experience, availability, ag
 
 async function insertChildProfile({ user_id, ages, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
-  const sql = 'INSERT INTO children(user_id,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5) RETURNING id';
+  const sql = 'INSERT INTO children(parent_id,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5) RETURNING id';
   const params = [user_id, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
@@ -207,7 +207,7 @@ async function insertWaitlistEntry({ email, city }){
 
 async function getParentChildren(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE user_id=$1 ORDER BY created_at DESC';
+  const sql = 'SELECT id, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE parent_id=$1 ORDER BY created_at DESC';
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
@@ -230,14 +230,14 @@ async function getOrCreateChild(user_id, childName){
   
   // If a name is provided, try to find existing child with that name
   if(childName && childName.trim()){
-    const findSql = 'SELECT id FROM children WHERE user_id=$1 LIMIT 1';
+    const findSql = 'SELECT id FROM children WHERE parent_id=$1 LIMIT 1';
     const findResult = await pool.query(findSql, [user_id]);
     if(findResult.rows.length > 0){
       return findResult.rows[0].id;
     }
     
     // Create new child
-    const createSql = 'INSERT INTO children(user_id, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5) RETURNING id';
+    const createSql = 'INSERT INTO children(parent_id, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5) RETURNING id';
     const createResult = await pool.query(createSql, [user_id, null, null, null, null]);
     return createResult.rows[0]?.id;
   }
