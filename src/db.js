@@ -217,36 +217,48 @@ async function approveApplication(applicationId){
   }
   
   console.log('[DB] Approving application:', applicationId, 'for user:', app.user_id, app.name);
-  console.log('[DB] Age groups type:', typeof app.age_groups, app.age_groups);
-  console.log('[DB] Availability type:', typeof app.availability, app.availability);
   
-  // Ensure JSONB fields are properly formatted (convert to JSON string if they're objects)
+  // Ensure JSONB fields are properly formatted
   const ageGroupsJson = app.age_groups ? (typeof app.age_groups === 'string' ? app.age_groups : JSON.stringify(app.age_groups)) : null;
   const availabilityJson = app.availability ? (typeof app.availability === 'string' ? app.availability : JSON.stringify(app.availability)) : null;
   
-  // Insert into providers table
-  const insertSql = `
-    INSERT INTO providers (user_id, name, email, phone, city, province, experience, certifications, age_groups, availability)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
-    ON CONFLICT (user_id) DO UPDATE SET
-      name = EXCLUDED.name,
-      email = EXCLUDED.email,
-      phone = EXCLUDED.phone,
-      city = EXCLUDED.city,
-      province = EXCLUDED.province,
-      experience = EXCLUDED.experience,
-      certifications = EXCLUDED.certifications,
-      age_groups = EXCLUDED.age_groups,
-      availability = EXCLUDED.availability,
-      approved_at = NOW()
-    RETURNING id
-  `;
-  const result = await pool.query(insertSql, [
-    app.user_id, app.name, app.email, app.phone, app.city, app.province,
-    app.experience, app.certifications, ageGroupsJson, availabilityJson
-  ]);
+  // Check if provider already exists for this user
+  const checkSql = 'SELECT id FROM providers WHERE user_id = $1';
+  const existing = await pool.query(checkSql, [app.user_id]);
   
-  const providerId = result.rows[0]?.id;
+  let providerId;
+  
+  if (existing.rows.length > 0) {
+    // Update existing provider
+    console.log('[DB] Updating existing provider:', existing.rows[0].id);
+    const updateSql = `
+      UPDATE providers SET
+        name = $1, email = $2, phone = $3, city = $4, province = $5,
+        experience = $6, certifications = $7, age_groups = $8::jsonb, 
+        availability = $9::jsonb, approved_at = NOW()
+      WHERE user_id = $10
+      RETURNING id
+    `;
+    const result = await pool.query(updateSql, [
+      app.name, app.email, app.phone, app.city, app.province,
+      app.experience, app.certifications, ageGroupsJson, availabilityJson, app.user_id
+    ]);
+    providerId = result.rows[0]?.id;
+  } else {
+    // Insert new provider
+    console.log('[DB] Creating new provider for user:', app.user_id);
+    const insertSql = `
+      INSERT INTO providers (user_id, name, email, phone, city, province, experience, certifications, age_groups, availability)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+      RETURNING id
+    `;
+    const result = await pool.query(insertSql, [
+      app.user_id, app.name, app.email, app.phone, app.city, app.province,
+      app.experience, app.certifications, ageGroupsJson, availabilityJson
+    ]);
+    providerId = result.rows[0]?.id;
+  }
+  
   console.log('[DB] Provider created/updated:', providerId);
   return providerId;
 }
