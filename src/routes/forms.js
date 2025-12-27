@@ -1,6 +1,8 @@
+console.log('DEPLOYMENT TEST: forms.js loaded');
+
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool } = require('../db');
 
 const router = express.Router();
 
@@ -230,6 +232,24 @@ router.post('/request', async (req, res) => {
   }catch(err){
     console.error('Error creating childcare request:', err);
     return res.status(500).json({ error: 'Failed to create request: ' + err.message });
+  }
+});
+
+// Cancel childcare request
+router.post('/request/:id/cancel', async (req, res) => {
+  const requestId = parseInt(req.params.id);
+  if(!requestId || isNaN(requestId)){
+    return res.status(400).json({ error: 'Invalid request ID' });
+  }
+  try{
+    const { rows } = await pool.query('UPDATE childcare_requests SET status=$1 WHERE id=$2 RETURNING id', ['cancelled', requestId]);
+    if(rows.length === 0) {
+      return res.status(404).json({ error: 'Request not found' });
+    }
+    return res.json({ success: true, id: requestId });
+  }catch(err){
+    console.error('Failed to cancel request:', err);
+    return res.status(500).json({ error: 'Failed to cancel request' });
   }
 });
 
