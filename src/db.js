@@ -54,6 +54,7 @@ async function init(){
     CREATE TABLE IF NOT EXISTS childcare_requests (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      child_id INTEGER REFERENCES children(id) ON DELETE CASCADE,
       location TEXT,
       status TEXT DEFAULT 'pending',
       notes TEXT,
@@ -149,6 +150,22 @@ async function getParentChildren(user_id){
   return result.rows || [];
 }
 
+async function getOrCreateChild(user_id, childName){
+  if(!pool) return null;
+  // First try to find a child with this name
+  const findSql = 'SELECT id FROM children WHERE user_id=$1 AND created_at IS NOT NULL ORDER BY created_at DESC LIMIT 1';
+  const findResult = await pool.query(findSql, [user_id]);
+  
+  if(findResult.rows.length > 0){
+    return findResult.rows[0].id;
+  }
+  
+  // Create a new child if none exists
+  const createSql = 'INSERT INTO children(user_id, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5) RETURNING id';
+  const createResult = await pool.query(createSql, [user_id, null, null, null, null]);
+  return createResult.rows[0]?.id;
+}
+
 async function getParentProfile(user_id){
   if(!pool) return null;
   const sql = 'SELECT id, name, email, phone, city, province, created_at FROM users WHERE id=$1 AND type=$2';
@@ -156,10 +173,10 @@ async function getParentProfile(user_id){
   return result.rows[0] || null;
 }
 
-async function insertChildcareRequest({ user_id, location, notes }){
+async function insertChildcareRequest({ user_id, child_id, location, notes }){
   if(!pool) return;
-  const sql = 'INSERT INTO childcare_requests(user_id, location, notes) VALUES($1, $2, $3) RETURNING id';
-  const result = await pool.query(sql, [user_id, location, notes || null]);
+  const sql = 'INSERT INTO childcare_requests(user_id, child_id, location, notes) VALUES($1, $2, $3, $4) RETURNING id';
+  const result = await pool.query(sql, [user_id, child_id || null, location, notes || null]);
   return result.rows[0]?.id;
 }
 
@@ -184,4 +201,4 @@ async function getParentSessions(user_id){
   return result.rows || [];
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, insertChildcareRequest, getParentRequests, getParentSessions };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions };

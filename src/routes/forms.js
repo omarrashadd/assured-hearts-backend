@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, insertChildcareRequest, getParentRequests, getParentSessions } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions } = require('../db');
 
 const router = express.Router();
 
@@ -182,11 +182,18 @@ router.put('/child/:child_id', async (req, res) => {
 // Create childcare request
 router.post('/request', async (req, res) => {
   try {
-    const { user_id, location, notes } = req.body;
+    const { user_id, location, notes, childName } = req.body;
     if(!user_id || !location){
       return res.status(400).json({ error: 'Missing required fields' });
     }
-    const id = await insertChildcareRequest({ user_id, location, notes });
+    
+    // Get or create child
+    let childId = null;
+    if(childName){
+      childId = await getOrCreateChild(user_id, childName);
+    }
+    
+    const id = await insertChildcareRequest({ user_id, child_id: childId, location, notes });
     res.json({ success: true, id });
   } catch (err) {
     console.error('Error creating childcare request:', err);
