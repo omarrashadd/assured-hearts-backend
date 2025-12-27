@@ -201,6 +201,15 @@ router.post('/request', async (req, res) => {
   }
   
   try{
+    // Verify user exists first
+    const { getParentProfile } = require('../db');
+    const userExists = await getParentProfile(user_id);
+    console.log('User exists check:', userExists ? 'YES' : 'NO', 'for user_id:', user_id);
+    
+    if(!userExists) {
+      return res.status(404).json({ error: 'User not found. Please log in again.' });
+    }
+    
     let finalChildId = child_id ? parseInt(child_id) : null;
     
     // If a new child name is provided and no child_id, create the child first
