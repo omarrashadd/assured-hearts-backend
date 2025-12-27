@@ -117,6 +117,17 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
+    // Migration: Add user_id column to children table if it doesn't exist
+    try{
+      await pool.query(`
+        ALTER TABLE children 
+        ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+      `);
+      console.log('[DB] Added user_id column to children table');
+    }catch(migErr){
+      console.log('[DB] user_id column migration skipped:', migErr.message);
+    }
+    
     // Migration: Add parent_id column to childcare_requests if it doesn't exist
     try{
       await pool.query(`
