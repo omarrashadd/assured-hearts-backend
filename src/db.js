@@ -35,7 +35,7 @@ async function init(){
   }
   
   const createParentsTable = `
-    CREATE TABLE parents (
+    CREATE TABLE IF NOT EXISTS parents (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -47,7 +47,7 @@ async function init(){
     );`;
     
   const createProvidersApplicationsTable = `
-    CREATE TABLE providers_applications (
+    CREATE TABLE IF NOT EXISTS providers_applications (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -69,7 +69,7 @@ async function init(){
     );`;
     
   const createProvidersTable = `
-    CREATE TABLE providers (
+    CREATE TABLE IF NOT EXISTS providers (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
@@ -90,7 +90,7 @@ async function init(){
     );`;
 
   const createChildren = `
-    CREATE TABLE children (
+    CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       name TEXT,
@@ -102,7 +102,7 @@ async function init(){
     );`;
     
   const createWaitlist = `
-    CREATE TABLE waitlist (
+    CREATE TABLE IF NOT EXISTS waitlist (
       id SERIAL PRIMARY KEY,
       email TEXT NOT NULL,
       city TEXT NOT NULL,
@@ -110,7 +110,7 @@ async function init(){
     );`;
     
   const createRequests = `
-    CREATE TABLE childcare_requests (
+    CREATE TABLE IF NOT EXISTS childcare_requests (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       child_id INTEGER REFERENCES children(id) ON DELETE CASCADE,
@@ -121,7 +121,7 @@ async function init(){
     );`;
     
   const createSessions = `
-    CREATE TABLE sessions (
+    CREATE TABLE IF NOT EXISTS sessions (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES parents(id) ON DELETE CASCADE,
       provider_id INTEGER REFERENCES providers(id) ON DELETE CASCADE,
@@ -132,27 +132,29 @@ async function init(){
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
     
-  try{
-    console.log('[DB] Creating parents table...');
-    await pool.query(createParentsTable);
-    console.log('[DB] Creating providers_applications table...');
-    await pool.query(createProvidersApplicationsTable);
-    console.log('[DB] Creating providers table...');
-    await pool.query(createProvidersTable);
-    console.log('[DB] Creating children table...');
-    await pool.query(createChildren);
-    console.log('[DB] Creating waitlist table...');
-    await pool.query(createWaitlist);
-    console.log('[DB] Creating childcare_requests table...');
-    await pool.query(createRequests);
-    console.log('[DB] Creating sessions table...');
-    await pool.query(createSessions);
-    
-    console.log('[DB] ✓ All tables recreated successfully');
-  }catch(err){
-    console.error('[DB] ✗ Init failed:', err.message);
-    console.error('[DB] Error details:', err);
+  const createSteps = [
+    { name: 'parents', sql: createParentsTable },
+    { name: 'providers_applications', sql: createProvidersApplicationsTable },
+    { name: 'providers', sql: createProvidersTable },
+    { name: 'children', sql: createChildren },
+    { name: 'waitlist', sql: createWaitlist },
+    { name: 'childcare_requests', sql: createRequests },
+    { name: 'sessions', sql: createSessions }
+  ];
+
+  for (const step of createSteps) {
+    try {
+      console.log(`[DB] Creating ${step.name} table...`);
+      await pool.query(step.sql);
+      console.log(`[DB] ✓ ${step.name} ready`);
+    } catch (err) {
+      console.error(`[DB] ✗ Failed to create ${step.name}:`, err.message);
+      console.error('[DB] Error details:', err);
+      // Continue to next to avoid blocking, but surface error
+    }
   }
+
+  console.log('[DB] Init sequence completed');
 }
 
 // Hash password helper
