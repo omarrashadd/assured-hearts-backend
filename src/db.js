@@ -50,11 +50,33 @@ async function init(){
       city TEXT NOT NULL,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+  const createRequests = `
+    CREATE TABLE IF NOT EXISTS childcare_requests (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      location TEXT,
+      status TEXT DEFAULT 'pending',
+      notes TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
+  const createSessions = `
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+      session_date DATE,
+      start_time TIME,
+      end_time TIME,
+      status TEXT DEFAULT 'scheduled',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
   try{
     await pool.query(createUsers);
     await pool.query(createProviderApps);
     await pool.query(createChildren);
     await pool.query(createWaitlist);
+    await pool.query(createRequests);
+    await pool.query(createSessions);
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
@@ -127,4 +149,39 @@ async function getParentChildren(user_id){
   return result.rows || [];
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile };
+async function getParentProfile(user_id){
+  if(!pool) return null;
+  const sql = 'SELECT id, name, email, phone, city, province, created_at FROM users WHERE id=$1 AND type=$2';
+  const result = await pool.query(sql, [user_id, 'parent']);
+  return result.rows[0] || null;
+}
+
+async function insertChildcareRequest({ user_id, location, notes }){
+  if(!pool) return;
+  const sql = 'INSERT INTO childcare_requests(user_id, location, notes) VALUES($1, $2, $3) RETURNING id';
+  const result = await pool.query(sql, [user_id, location, notes || null]);
+  return result.rows[0]?.id;
+}
+
+async function getParentRequests(user_id){
+  if(!pool) return [];
+  const sql = 'SELECT id, location, status, notes, created_at FROM childcare_requests WHERE user_id=$1 ORDER BY created_at DESC';
+  const result = await pool.query(sql, [user_id]);
+  return result.rows || [];
+}
+
+async function getParentSessions(user_id){
+  if(!pool) return [];
+  const sql = `
+    SELECT s.id, s.session_date, s.start_time, s.end_time, s.status, 
+           u.name as provider_name, u.city as provider_city
+    FROM sessions s
+    LEFT JOIN users u ON s.provider_id = u.id
+    WHERE s.user_id=$1 AND s.session_date >= CURRENT_DATE
+    ORDER BY s.session_date ASC, s.start_time ASC
+  `;
+  const result = await pool.query(sql, [user_id]);
+  return result.rows || [];
+}
+
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, insertChildcareRequest, getParentRequests, getParentSessions };

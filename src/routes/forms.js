@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, insertChildcareRequest, getParentRequests, getParentSessions } = require('../db');
 
 const router = express.Router();
 
@@ -135,7 +135,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Parent dashboard: get parent profile + children
+// Parent dashboard: get parent profile + children + requests + sessions
 router.get('/parent/:user_id', async (req, res) => {
   const userId = parseInt(req.params.user_id);
   if(!userId || isNaN(userId)){
@@ -147,7 +147,9 @@ router.get('/parent/:user_id', async (req, res) => {
       return res.status(404).json({ error: 'Parent profile not found' });
     }
     const children = await getParentChildren(userId);
-    return res.json({ profile, children });
+    const requests = await getParentRequests(userId);
+    const sessions = await getParentSessions(userId);
+    return res.json({ profile, children, requests, sessions });
   }catch(err){
     console.error('Parent dashboard fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch dashboard' });
@@ -174,6 +176,21 @@ router.put('/child/:child_id', async (req, res) => {
   }catch(err){
     console.error('Child update failed:', err);
     return res.status(500).json({ error: 'Failed to update child profile' });
+  }
+});
+
+// Create childcare request
+router.post('/request', async (req, res) => {
+  try {
+    const { user_id, location, notes } = req.body;
+    if(!user_id || !location){
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+    const id = await insertChildcareRequest({ user_id, location, notes });
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error('Error creating childcare request:', err);
+    res.status(500).json({ error: 'Failed to create request' });
   }
 });
 
