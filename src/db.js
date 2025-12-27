@@ -13,20 +13,20 @@ async function init(){
   if(!pool) return;
   
   try {
-    // Add user_id column to providers table if it doesn't exist (migration)
-    await pool.query(`
-      DO $$ 
-      BEGIN
-        IF NOT EXISTS (
-          SELECT 1 FROM information_schema.columns 
-          WHERE table_name='providers' AND column_name='user_id'
-        ) THEN
-          ALTER TABLE providers ADD COLUMN user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE;
-          CREATE INDEX IF NOT EXISTS idx_providers_user_id ON providers(user_id);
-        END IF;
-      END $$;
-    `);
-    console.log('[DB] Migration check complete');
+    // Migration: Add missing columns to providers table if they don't exist
+    const migrations = [
+      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE",
+      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS certifications TEXT",
+      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS age_groups JSONB",
+      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS availability JSONB",
+      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
+      "CREATE INDEX IF NOT EXISTS idx_providers_user_id ON providers(user_id)"
+    ];
+    
+    for (const migration of migrations) {
+      await pool.query(migration);
+    }
+    console.log('[DB] Migrations applied successfully');
   } catch(err) {
     console.error('[DB] Migration failed:', err.message);
   }
