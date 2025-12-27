@@ -1,5 +1,5 @@
 const express = require('express');
-const { createParentUser, createProviderUser, insertProviderApplication } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile } = require('../db');
 
 const router = express.Router();
 
@@ -61,6 +61,38 @@ router.post('/provider', async (req, res) => {
     console.error('Provider create failed:', err);
     if(err.code === '23505') return res.status(400).json({ error: 'Email already in use' });
     return res.status(500).json({ error: 'Failed to create account' });
+  }
+});
+
+router.post('/children', async (req, res) => {
+  console.log('Child demographics received:', { user_id: req.body.user_id, num_children: req.body.numChildren });
+  
+  if (!req.body.user_id) {
+    return res.status(400).json({ error: 'user_id is required' });
+  }
+
+  const { user_id, numChildren, frequency, preferredSchedule, specialNeeds } = req.body;
+  
+  // Collect ages from dynamic fields (child1Age, child2Age, etc.)
+  const ages = [];
+  for (let i = 1; i <= numChildren; i++) {
+    const age = req.body[`child${i}Age`];
+    if (age) ages.push(parseInt(age));
+  }
+
+  try{
+    const childId = await insertChildProfile({
+      user_id,
+      ages,
+      frequency,
+      preferred_schedule: preferredSchedule,
+      special_needs: specialNeeds
+    });
+    console.log('Child profile created:', childId, 'for user:', user_id);
+    return res.status(200).json({ message: 'Child profile created', childId });
+  }catch(err){
+    console.error('Child profile create failed:', err);
+    return res.status(500).json({ error: 'Failed to create child profile' });
   }
 });
 

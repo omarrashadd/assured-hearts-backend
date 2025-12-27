@@ -33,9 +33,20 @@ async function init(){
       certifications TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+  const createChildren = `
+    CREATE TABLE IF NOT EXISTS children (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      ages JSONB,
+      frequency TEXT,
+      preferred_schedule TEXT,
+      special_needs TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
   try{
     await pool.query(createUsers);
     await pool.query(createProviderApps);
+    await pool.query(createChildren);
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
@@ -72,4 +83,12 @@ async function insertProviderApplication({ user_id, experience, availability, ag
   return pool.query(sql, params);
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication };
+async function insertChildProfile({ user_id, ages, frequency, preferred_schedule, special_needs }){
+  if(!pool) return;
+  const sql = 'INSERT INTO children(user_id,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5) RETURNING id';
+  const params = [user_id, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
+  const result = await pool.query(sql, params);
+  return result.rows[0]?.id;
+}
+
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile };
