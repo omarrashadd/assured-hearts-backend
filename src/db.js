@@ -119,6 +119,30 @@ async function init(){
     await pool.query(createRequests);
     await pool.query(createSessions);
     
+    // Migration: Add password_hash to providers_applications if it doesn't exist
+    try {
+      await pool.query(`ALTER TABLE providers_applications ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+      console.log('[DB] Ensured password_hash column in providers_applications');
+    } catch(e) {
+      console.log('[DB] Password_hash column migration check complete');
+    }
+    
+    // Migration: Add password_hash to parents if it doesn't exist
+    try {
+      await pool.query(`ALTER TABLE parents ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+      console.log('[DB] Ensured password_hash column in parents');
+    } catch(e) {
+      console.log('[DB] Password_hash column migration check complete');
+    }
+    
+    // Migration: Add password_hash to providers if it doesn't exist
+    try {
+      await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
+      console.log('[DB] Ensured password_hash column in providers');
+    } catch(e) {
+      console.log('[DB] Password_hash column migration check complete');
+    }
+    
     console.log('[DB] All tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
