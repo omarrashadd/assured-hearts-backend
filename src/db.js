@@ -43,10 +43,18 @@ async function init(){
       special_needs TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+  const createWaitlist = `
+    CREATE TABLE IF NOT EXISTS waitlist (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL,
+      city TEXT NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
   try{
     await pool.query(createUsers);
     await pool.query(createProviderApps);
     await pool.query(createChildren);
+    await pool.query(createWaitlist);
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
@@ -105,4 +113,11 @@ async function countProvidersByCity(city){
   return Number(result.rows[0]?.c || 0);
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity };
+async function insertWaitlistEntry({ email, city }){
+  if(!pool) return;
+  const sql = 'INSERT INTO waitlist(email, city) VALUES($1, $2) RETURNING id';
+  const result = await pool.query(sql, [email, city]);
+  return result.rows[0]?.id;
+}
+
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry };

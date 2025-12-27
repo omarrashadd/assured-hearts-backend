@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry } = require('../db');
 
 const router = express.Router();
 
@@ -94,6 +94,22 @@ router.post('/children', async (req, res) => {
   }catch(err){
     console.error('Child profile create failed:', err);
     return res.status(500).json({ error: 'Failed to create child profile' });
+  }
+});
+
+// Waitlist endpoint
+router.post('/waitlist', async (req, res) => {
+  const { email, city } = req.body || {};
+  if(!email || !city){
+    return res.status(400).json({ error: 'Email and city are required' });
+  }
+  try{
+    const id = await insertWaitlistEntry({ email, city });
+    console.log('Waitlist entry created:', id, 'for', email, 'in', city);
+    return res.status(200).json({ message: 'Added to waitlist', id });
+  }catch(err){
+    console.error('Waitlist create failed:', err);
+    return res.status(500).json({ error: 'Failed to add to waitlist' });
   }
 });
 
