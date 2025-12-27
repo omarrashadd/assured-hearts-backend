@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild } = require('../db');
 
 const router = express.Router();
 
@@ -152,6 +152,29 @@ router.get('/parent/:user_id', async (req, res) => {
   }catch(err){
     console.error('Parent dashboard fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch dashboard' });
+  }
+});
+
+// Update child profile
+router.put('/child/:child_id', async (req, res) => {
+  const childId = parseInt(req.params.child_id);
+  if(!childId || isNaN(childId)){
+    return res.status(400).json({ error: 'Invalid child ID' });
+  }
+  try{
+    const { name, ages, frequency, preferred_schedule, special_needs } = req.body;
+    await updateChild({
+      child_id: childId,
+      name,
+      ages,
+      frequency,
+      preferred_schedule,
+      special_needs
+    });
+    return res.json({ message: 'Child profile updated', childId });
+  }catch(err){
+    console.error('Child update failed:', err);
+    return res.status(500).json({ error: 'Failed to update child profile' });
   }
 });
 

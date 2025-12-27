@@ -128,11 +128,37 @@ async function getParentChildren(user_id){
   return result.rows || [];
 }
 
-async function getParentProfile(user_id){
-  if(!pool) return null;
-  const sql = 'SELECT id, name, email, phone, city, province, created_at FROM users WHERE id=$1 AND type=$2';
-  const result = await pool.query(sql, [user_id, 'parent']);
-  return result.rows[0] || null;
+async function updateChild({ child_id, name, ages, frequency, preferred_schedule, special_needs }){
+  if(!pool) return;
+  const updates = [];
+  const params = [child_id];
+  let paramIndex = 2;
+  
+  if(name !== undefined) {
+    updates.push(`name = $${paramIndex++}`);
+    params.push(name);
+  }
+  if(ages !== undefined) {
+    updates.push(`ages = $${paramIndex++}`);
+    params.push(JSON.stringify(ages));
+  }
+  if(frequency !== undefined) {
+    updates.push(`frequency = $${paramIndex++}`);
+    params.push(frequency);
+  }
+  if(preferred_schedule !== undefined) {
+    updates.push(`preferred_schedule = $${paramIndex++}`);
+    params.push(preferred_schedule);
+  }
+  if(special_needs !== undefined) {
+    updates.push(`special_needs = $${paramIndex++}`);
+    params.push(special_needs);
+  }
+  
+  if(updates.length === 0) return;
+  
+  const sql = `UPDATE children SET ${updates.join(', ')} WHERE id = $1`;
+  return pool.query(sql, params);
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild };
