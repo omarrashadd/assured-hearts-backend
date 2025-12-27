@@ -117,6 +117,24 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
+    // Migration: Fix foreign key constraint on children table to point to users, not parents
+    try{
+      // Drop the incorrect foreign key constraint
+      await pool.query(`
+        ALTER TABLE children 
+        DROP CONSTRAINT IF EXISTS children_parent_id_fkey;
+      `);
+      // Add the correct constraint pointing to users table
+      await pool.query(`
+        ALTER TABLE children 
+        ADD CONSTRAINT children_parent_id_fkey 
+        FOREIGN KEY (parent_id) REFERENCES users(id) ON DELETE CASCADE;
+      `);
+      console.log('[DB] Fixed children foreign key constraint to reference users table');
+    }catch(migErr){
+      console.log('[DB] Children FK migration error:', migErr.message);
+    }
+    
   }catch(err){
     console.error('[DB] Init failed', err);
   }
