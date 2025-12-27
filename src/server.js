@@ -6,6 +6,7 @@ const morgan = require('morgan');
 
 const healthRouter = require('./routes/health');
 const formsRouter = require('./routes/forms');
+const searchRouter = require('./routes/search');
 const { init, pool } = require('./db');
 
 const app = express();
@@ -23,6 +24,7 @@ init();
 
 app.use('/health', healthRouter);
 app.use('/forms', formsRouter);
+app.use('/search', searchRouter);
 
 // Root endpoint for quick sanity checks
 app.get('/', (req, res) => {

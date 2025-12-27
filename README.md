@@ -20,6 +20,9 @@ See `.env.example` for required variables:
 - `GET /health` — health check
 - `POST /forms/parent` — expects `name, email, phone, children`
 - `POST /forms/provider` — expects `name, email, phone, experience`
+ - `POST /forms/children` — save child demographics for a parent account
+ - `POST /forms/login` — login with bcrypt (returns `userId, name, type, city, province`)
+ - `GET /search?city=City` — returns `{ caregivers: number }` based on providers in `users` table with matching `city`
 
 Responses are JSON. Validation is minimal; extend as needed.
 
@@ -33,3 +36,4 @@ Responses are JSON. Validation is minimal; extend as needed.
 - Add persistence (Prisma + Postgres or another ORM).
 - Add email/Slack notifications on form submissions.
 - Add rate limiting (e.g., express-rate-limit) and stronger validation.
+ - Expand search to support province filtering and paging of caregiver profiles.

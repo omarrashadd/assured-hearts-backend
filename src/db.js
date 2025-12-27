@@ -98,4 +98,11 @@ async function findUserByEmail(email){
   return result.rows[0] || null;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail };
+async function countProvidersByCity(city){
+  if(!pool) return 0;
+  const sql = "SELECT COUNT(*) AS c FROM users WHERE type='provider' AND LOWER(city) = LOWER($1)";
+  const result = await pool.query(sql, [city]);
+  return Number(result.rows[0]?.c || 0);
+}
+
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity };
