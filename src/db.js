@@ -87,6 +87,15 @@ async function init(){
       // Column might already exist, ignore
     }
     
+    // Add child_id column to childcare_requests if it doesn't exist
+    try {
+      await pool.query(`ALTER TABLE childcare_requests ADD COLUMN child_id INTEGER REFERENCES children(id) ON DELETE CASCADE;`);
+      console.log('[DB] Added child_id column to childcare_requests');
+    } catch(e) {
+      // Column might already exist, ignore
+      console.log('[DB] child_id column already exists');
+    }
+    
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
