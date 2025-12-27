@@ -12,6 +12,22 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 async function init(){
   if(!pool) return;
   
+  // Drop all tables and start fresh (data loss is acceptable for testing)
+  try {
+    await pool.query(`DROP TABLE IF EXISTS sessions CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS childcare_requests CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS children CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS providers CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS providers_applications CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS parents CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS waitlist CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS users CASCADE;`);
+    await pool.query(`DROP TABLE IF EXISTS provider_applications CASCADE;`);
+    console.log('[DB] Dropped all existing tables');
+  } catch(e) {
+    console.log('[DB] No existing tables to drop or error:', e.message);
+  }
+  
   const createParentsTable = `
     CREATE TABLE IF NOT EXISTS parents (
       id SERIAL PRIMARY KEY,
@@ -119,31 +135,7 @@ async function init(){
     await pool.query(createRequests);
     await pool.query(createSessions);
     
-    // Migration: Add password_hash to providers_applications if it doesn't exist
-    try {
-      await pool.query(`ALTER TABLE providers_applications ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
-      console.log('[DB] Ensured password_hash column in providers_applications');
-    } catch(e) {
-      console.log('[DB] Password_hash column migration check complete');
-    }
-    
-    // Migration: Add password_hash to parents if it doesn't exist
-    try {
-      await pool.query(`ALTER TABLE parents ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
-      console.log('[DB] Ensured password_hash column in parents');
-    } catch(e) {
-      console.log('[DB] Password_hash column migration check complete');
-    }
-    
-    // Migration: Add password_hash to providers if it doesn't exist
-    try {
-      await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS password_hash TEXT;`);
-      console.log('[DB] Ensured password_hash column in providers');
-    } catch(e) {
-      console.log('[DB] Password_hash column migration check complete');
-    }
-    
-    console.log('[DB] All tables ensured');
+    console.log('[DB] All tables recreated successfully');
   }catch(err){
     console.error('[DB] Init failed', err);
   }
