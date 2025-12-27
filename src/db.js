@@ -117,25 +117,6 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
-    // Migration: Drop user_id column from children table if it exists (we use parent_id)
-    try{
-      await pool.query(`ALTER TABLE children DROP COLUMN IF EXISTS user_id;`);
-      console.log('[DB] Dropped children.user_id column');
-    }catch(migErr){
-      console.log('[DB] Drop user_id column error:', migErr.message);
-    }
-    
-    // Migration: Add parent_id column to childcare_requests if it doesn't exist
-    try{
-      await pool.query(`
-        ALTER TABLE childcare_requests 
-        ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
-      `);
-      console.log('[DB] Added parent_id column to childcare_requests');
-    }catch(migErr){
-      console.log('[DB] parent_id column migration skipped:', migErr.message);
-    }
-    
   }catch(err){
     console.error('[DB] Init failed', err);
   }
