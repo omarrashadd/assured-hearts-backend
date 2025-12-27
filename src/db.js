@@ -117,23 +117,12 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
-    // Migration: Rename user_id to parent_id in children table
+    // Migration: Drop user_id column from children table if it exists (we use parent_id)
     try{
-      // First check if user_id column exists
-      const checkCol = await pool.query(`
-        SELECT column_name FROM information_schema.columns 
-        WHERE table_name='children' AND column_name='user_id'
-      `);
-      
-      if(checkCol.rows.length > 0) {
-        // Rename user_id to parent_id
-        await pool.query(`ALTER TABLE children RENAME COLUMN user_id TO parent_id;`);
-        console.log('[DB] Renamed children.user_id to parent_id');
-      } else {
-        console.log('[DB] children.user_id already renamed or does not exist');
-      }
+      await pool.query(`ALTER TABLE children DROP COLUMN IF EXISTS user_id;`);
+      console.log('[DB] Dropped children.user_id column');
     }catch(migErr){
-      console.log('[DB] children user_id->parent_id migration error:', migErr.message);
+      console.log('[DB] Drop user_id column error:', migErr.message);
     }
     
     // Migration: Add parent_id column to childcare_requests if it doesn't exist
