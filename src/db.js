@@ -179,6 +179,54 @@ async function updateChild({ child_id, name, ages, frequency, preferred_schedule
   await pool.query(sql, [ages ? JSON.stringify(ages) : null, frequency, preferred_schedule, special_needs, child_id]);
 }
 
+async function getOrCreateChild(user_id, childName){
+  if(!pool) return null;
+  
+  // If a name is provided, try to find existing child with that name
+  if(childName && childName.trim()){
+    const findSql = 'SELECT id FROM children WHERE user_id=$1 LIMIT 1';
+    const findResult = await pool.query(findSql, [user_id]);
+    if(findResult.rows.length > 0){
+      return findResult.rows[0].id;
+    }
+    
+    // Create new child
+    const createSql = 'INSERT INTO children(user_id, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5) RETURNING id';
+    const createResult = await pool.query(createSql, [user_id, null, null, null, null]);
+    return createResult.rows[0]?.id;
+  }
+  
+  return null;
+}
+
+async function insertChildcareRequest({ user_id, child_id, location, notes }){
+  if(!pool) return;
+  const sql = 'INSERT INTO childcare_requests(parent_id, child_id, location, notes, status) VALUES($1, $2, $3, $4, $5) RETURNING id';
+  const result = await pool.query(sql, [user_id, child_id || null, location, notes || null, 'pending']);
+  return result.rows[0]?.id;
+}
+
+async function getParentRequests(user_id){
+  if(!pool) return [];
+  const sql = 'SELECT id, location, status, notes, created_at FROM childcare_requests WHERE parent_id=$1 ORDER BY created_at DESC';
+  const result = await pool.query(sql, [user_id]);
+  return result.rows || [];
+}
+
+async function getParentSessions(user_id){
+  if(!pool) return [];
+  const sql = `
+    SELECT s.id, s.session_date, s.start_time, s.end_time, s.status, 
+           p.name as provider_name, p.city as provider_city
+    FROM sessions s
+    LEFT JOIN providers p ON s.provider_id = p.id
+    WHERE s.parent_id=$1 AND s.session_date >= CURRENT_DATE
+    ORDER BY s.session_date ASC, s.start_time ASC
+  `;
+  const result = await pool.query(sql, [user_id]);
+  return result.rows || [];
+}
+
 async function getPendingApplications(){
   if(!pool) return [];
   const sql = `
@@ -263,4 +311,4 @@ async function approveApplication(applicationId){
   return providerId;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getPendingApplications, getApplicationDetails, approveApplication };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication };

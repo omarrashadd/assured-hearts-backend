@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getPendingApplications, getApplicationDetails, approveApplication } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication } = require('../db');
 
 const router = express.Router();
 
@@ -33,7 +33,13 @@ router.post('/parent', async (req, res) => {
 });
 
 router.post('/provider', async (req, res) => {
-  console.log('Provider signup received:', { name: req.body.name, email: req.body.email, meta: req.body.meta });
+  console.log('Provider signup received:', { 
+    name: req.body.name, 
+    email: req.body.email, 
+    hasPassword: !!req.body.password,
+    passwordLength: req.body.password?.length,
+    meta: req.body.meta 
+  });
   
   if (!hasRequired(req.body, REQUIRED_PROVIDER_FIELDS)) {
     console.log('Missing fields. Required:', REQUIRED_PROVIDER_FIELDS, 'Received:', Object.keys(req.body));
@@ -141,7 +147,7 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// Parent dashboard: get parent profile + children
+// Parent dashboard: get parent profile + children + requests + sessions
 router.get('/parent/:user_id', async (req, res) => {
   const userId = parseInt(req.params.user_id);
   if(!userId || isNaN(userId)){
@@ -153,7 +159,9 @@ router.get('/parent/:user_id', async (req, res) => {
       return res.status(404).json({ error: 'Parent profile not found' });
     }
     const children = await getParentChildren(userId);
-    return res.json({ profile, children });
+    const requests = await getParentRequests(userId);
+    const sessions = await getParentSessions(userId);
+    return res.json({ profile, children, requests, sessions });
   }catch(err){
     console.error('Parent dashboard fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch dashboard' });
@@ -180,6 +188,34 @@ router.put('/child/:child_id', async (req, res) => {
   }catch(err){
     console.error('Child update failed:', err);
     return res.status(500).json({ error: 'Failed to update child profile' });
+  }
+});
+
+// Create childcare request
+router.post('/request', async (req, res) => {
+  const { user_id, child_id, location, notes, childName } = req.body;
+  console.log('Childcare request received:', { user_id, child_id, location, childName });
+  
+  if(!user_id || !location){
+    return res.status(400).json({ error: 'user_id and location are required' });
+  }
+  
+  try{
+    let finalChildId = child_id ? parseInt(child_id) : null;
+    
+    // If a new child name is provided and no child_id, create the child first
+    if(childName && !finalChildId){
+      console.log('Creating new child with name:', childName);
+      finalChildId = await getOrCreateChild(user_id, childName);
+      console.log('Created/found child ID:', finalChildId);
+    }
+    
+    const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes });
+    console.log('Created childcare request ID:', id);
+    return res.json({ success: true, id });
+  }catch(err){
+    console.error('Error creating childcare request:', err);
+    return res.status(500).json({ error: 'Failed to create request: ' + err.message });
   }
 });
 
