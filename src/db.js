@@ -86,12 +86,35 @@ async function init(){
       approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
+  const createChildcareRequests = `
+    CREATE TABLE IF NOT EXISTS childcare_requests (
+      id SERIAL PRIMARY KEY,
+      parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      child_id INTEGER REFERENCES children(id) ON DELETE SET NULL,
+      location TEXT NOT NULL,
+      notes TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
+  const createSessions = `
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_id INTEGER REFERENCES providers(id) ON DELETE SET NULL,
+      session_date DATE NOT NULL,
+      start_time TIME,
+      end_time TIME,
+      status TEXT DEFAULT 'scheduled',
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
   try{
     await pool.query(createUsers);
     await pool.query(createProviderApps);
     await pool.query(createChildren);
     await pool.query(createWaitlist);
     await pool.query(createProviders);
+    await pool.query(createChildcareRequests);
+    await pool.query(createSessions);
     console.log('[DB] Tables ensured');
   }catch(err){
     console.error('[DB] Init failed', err);
