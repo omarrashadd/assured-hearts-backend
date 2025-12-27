@@ -267,5 +267,57 @@ router.post('/request', async (req, res) => {
   }
 });
 
+// Login endpoint
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password required' });
+  }
+  
+  try {
+    // Try to find parent first
+    let user = await findParentByEmail(email);
+    let userType = 'parent';
+    
+    // If not a parent, try provider application
+    if (!user) {
+      user = await findProviderApplicationByEmail(email);
+      if (user && user.status !== 'approved') {
+        return res.status(403).json({ error: 'Your provider application is still pending approval' });
+      }
+      userType = 'provider_pending';
+    }
+    
+    // If not in pending, try approved providers
+    if (!user) {
+      user = await findProviderByEmail(email);
+      userType = 'provider';
+    }
+    
+    // If not found anywhere
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    // Verify password
+    const passwordValid = user.password_hash && await bcrypt.compare(password, user.password_hash);
+    if (!passwordValid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    // Return user info
+    res.json({
+      userId: user.id,
+      name: user.name,
+      email: user.email,
+      type: userType
+    });
+  } catch (err) {
+    console.error('Login failed:', err);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
 module.exports = router;
 
