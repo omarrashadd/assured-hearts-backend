@@ -117,15 +117,23 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
-    // Migration: Add user_id column to children table if it doesn't exist
+    // Migration: Rename user_id to parent_id in children table
     try{
-      await pool.query(`
-        ALTER TABLE children 
-        ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+      // First check if user_id column exists
+      const checkCol = await pool.query(`
+        SELECT column_name FROM information_schema.columns 
+        WHERE table_name='children' AND column_name='user_id'
       `);
-      console.log('[DB] Added user_id column to children table');
+      
+      if(checkCol.rows.length > 0) {
+        // Rename user_id to parent_id
+        await pool.query(`ALTER TABLE children RENAME COLUMN user_id TO parent_id;`);
+        console.log('[DB] Renamed children.user_id to parent_id');
+      } else {
+        console.log('[DB] children.user_id already renamed or does not exist');
+      }
     }catch(migErr){
-      console.log('[DB] user_id column migration skipped:', migErr.message);
+      console.log('[DB] children user_id->parent_id migration error:', migErr.message);
     }
     
     // Migration: Add parent_id column to childcare_requests if it doesn't exist
