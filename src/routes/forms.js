@@ -214,9 +214,14 @@ router.post('/request', async (req, res) => {
     
     // If a new child name is provided and no child_id, create the child first
     if(childName && !finalChildId){
-      console.log('Creating new child with name:', childName);
+      console.log('Creating new child with name:', childName, 'for user:', user_id);
       finalChildId = await getOrCreateChild(user_id, childName);
       console.log('Created/found child ID:', finalChildId);
+      
+      // Verify the child was created with name
+      const { getParentChildren } = require('../db');
+      const verifyChildren = await getParentChildren(user_id);
+      console.log('All children for user after creation:', verifyChildren);
     }
     
     const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes });
