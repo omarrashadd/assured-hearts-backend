@@ -42,6 +42,19 @@ app.get('/forms/stats', async (req, res) => {
   }
 });
 
+// Recent submissions preview
+app.get('/forms/recent', async (req, res) => {
+  try{
+    if(!pool) return res.json({ parents: [], providers: [] });
+    const parents = await pool.query('SELECT id, name, email, phone, city, province, created_at FROM parents ORDER BY created_at DESC LIMIT 5');
+    const providers = await pool.query('SELECT id, name, email, phone, experience, city, province, created_at FROM providers ORDER BY created_at DESC LIMIT 5');
+    return res.json({ parents: parents.rows, providers: providers.rows });
+  }catch(err){
+    console.error('Recent error:', err);
+    return res.status(500).json({ error: 'Recent failed' });
+  }
+});
+
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
 });
