@@ -236,8 +236,11 @@ async function getOrCreateChild(user_id, childName){
 
 async function insertChildcareRequest({ user_id, child_id, location, notes }){
   if(!pool) return;
+  console.log('[DB] Inserting childcare request:', { user_id, child_id, location });
   const sql = 'INSERT INTO childcare_requests(parent_id, child_id, location, notes, status) VALUES($1, $2, $3, $4, $5) RETURNING id';
+  console.log('[DB] SQL:', sql, 'Params:', [user_id, child_id || null, location, notes || null, 'pending']);
   const result = await pool.query(sql, [user_id, child_id || null, location, notes || null, 'pending']);
+  console.log('[DB] Request inserted with ID:', result.rows[0]?.id);
   return result.rows[0]?.id;
 }
 
