@@ -278,7 +278,14 @@ async function insertChildcareRequest({ user_id, child_id, location, notes }){
 
 async function getParentRequests(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, location, status, notes, created_at FROM childcare_requests WHERE parent_id=$1 ORDER BY created_at DESC';
+  const sql = `
+    SELECT cr.id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
+           c.name as child_name
+    FROM childcare_requests cr
+    LEFT JOIN children c ON cr.child_id = c.id
+    WHERE cr.parent_id=$1 
+    ORDER BY cr.created_at DESC
+  `;
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
