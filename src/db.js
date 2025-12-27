@@ -135,6 +135,22 @@ async function init(){
       console.log('[DB] Children FK migration error:', migErr.message);
     }
     
+    // Migration: Fix foreign key constraint on childcare_requests table to point to users, not parents
+    try{
+      await pool.query(`
+        ALTER TABLE childcare_requests 
+        DROP CONSTRAINT IF EXISTS childcare_requests_parent_id_fkey;
+      `);
+      await pool.query(`
+        ALTER TABLE childcare_requests 
+        ADD CONSTRAINT childcare_requests_parent_id_fkey 
+        FOREIGN KEY (parent_id) REFERENCES users(id) ON DELETE CASCADE;
+      `);
+      console.log('[DB] Fixed childcare_requests foreign key constraint to reference users table');
+    }catch(migErr){
+      console.log('[DB] Childcare requests FK migration error:', migErr.message);
+    }
+    
   }catch(err){
     console.error('[DB] Init failed', err);
   }
