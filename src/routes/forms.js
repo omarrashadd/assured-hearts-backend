@@ -1,5 +1,6 @@
 const express = require('express');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile } = require('../db');
+const bcrypt = require('bcrypt');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail } = require('../db');
 
 const router = express.Router();
 
@@ -97,6 +98,28 @@ router.post('/children', async (req, res) => {
 });
 
 module.exports = router;
+
+// Login endpoint
+router.post('/login', async (req, res) => {
+  const { email, password } = req.body || {};
+  if(!email || !password){
+    return res.status(400).json({ error: 'Email and password are required' });
+  }
+  try{
+    const user = await findUserByEmail(email);
+    if(!user || !user.password_hash){
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    const ok = await bcrypt.compare(password, user.password_hash);
+    if(!ok){
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+    return res.json({ userId: user.id, name: user.name, type: user.type, city: user.city, province: user.province });
+  }catch(err){
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'Login failed' });
+  }
+});
 
 // Optional: simple stats endpoint to verify DB inserts
 router.get('/stats', async (req, res) => {

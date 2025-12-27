@@ -91,4 +91,11 @@ async function insertChildProfile({ user_id, ages, frequency, preferred_schedule
   return result.rows[0]?.id;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile };
+async function findUserByEmail(email){
+  if(!pool) return null;
+  const sql = 'SELECT id, name, email, phone, password_hash, type, city, province FROM users WHERE email=$1';
+  const result = await pool.query(sql, [email]);
+  return result.rows[0] || null;
+}
+
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail };
