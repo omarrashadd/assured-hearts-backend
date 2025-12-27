@@ -10,10 +10,16 @@ if(!DATABASE_URL){
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 
 async function init(){
-  if(!pool) return;
+  if(!pool) {
+    console.warn('[DB] No pool available, skipping init');
+    return;
+  }
+  
+  console.log('[DB] Starting database initialization...');
   
   // Drop all tables and start fresh (data loss is acceptable for testing)
   try {
+    console.log('[DB] Dropping all existing tables...');
     await pool.query(`DROP TABLE IF EXISTS sessions CASCADE;`);
     await pool.query(`DROP TABLE IF EXISTS childcare_requests CASCADE;`);
     await pool.query(`DROP TABLE IF EXISTS children CASCADE;`);
@@ -23,9 +29,9 @@ async function init(){
     await pool.query(`DROP TABLE IF EXISTS waitlist CASCADE;`);
     await pool.query(`DROP TABLE IF EXISTS users CASCADE;`);
     await pool.query(`DROP TABLE IF EXISTS provider_applications CASCADE;`);
-    console.log('[DB] Dropped all existing tables');
+    console.log('[DB] Successfully dropped all existing tables');
   } catch(e) {
-    console.log('[DB] No existing tables to drop or error:', e.message);
+    console.error('[DB] Error dropping tables:', e.message);
   }
   
   const createParentsTable = `
@@ -127,17 +133,25 @@ async function init(){
     );`;
     
   try{
+    console.log('[DB] Creating parents table...');
     await pool.query(createParentsTable);
+    console.log('[DB] Creating providers_applications table...');
     await pool.query(createProvidersApplicationsTable);
+    console.log('[DB] Creating providers table...');
     await pool.query(createProvidersTable);
+    console.log('[DB] Creating children table...');
     await pool.query(createChildren);
+    console.log('[DB] Creating waitlist table...');
     await pool.query(createWaitlist);
+    console.log('[DB] Creating childcare_requests table...');
     await pool.query(createRequests);
+    console.log('[DB] Creating sessions table...');
     await pool.query(createSessions);
     
-    console.log('[DB] All tables recreated successfully');
+    console.log('[DB] ✓ All tables recreated successfully');
   }catch(err){
-    console.error('[DB] Init failed', err);
+    console.error('[DB] ✗ Init failed:', err.message);
+    console.error('[DB] Error details:', err);
   }
 }
 
