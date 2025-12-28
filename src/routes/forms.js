@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, getChildByExternalId } = require('../db');
 
 const router = express.Router();
 
@@ -183,21 +183,24 @@ router.get('/parent/:user_id', async (req, res) => {
 
 // Update child profile
 router.put('/child/:child_id', async (req, res) => {
-  const childId = parseInt(req.params.child_id);
-  if(!childId || isNaN(childId)){
-    return res.status(400).json({ error: 'Invalid child ID' });
-  }
+  const childParam = req.params.child_id;
   try{
     const { name, ages, frequency, preferred_schedule, special_needs } = req.body;
+    let targetId = parseInt(childParam);
+    if(isNaN(targetId)){
+      const childRow = await getChildByExternalId(childParam);
+      if(!childRow) return res.status(404).json({ error: 'Child not found' });
+      targetId = childRow.id;
+    }
     await updateChild({
-      child_id: childId,
+      child_id: targetId,
       name,
       ages,
       frequency,
       preferred_schedule,
       special_needs
     });
-    return res.json({ message: 'Child profile updated', childId });
+    return res.json({ message: 'Child profile updated', childId: targetId });
   }catch(err){
     console.error('Child update failed:', err);
     return res.status(500).json({ error: 'Failed to update child profile' });
@@ -206,12 +209,16 @@ router.put('/child/:child_id', async (req, res) => {
 
 // Get single child profile
 router.get('/child/:child_id', async (req, res) => {
-  const childId = parseInt(req.params.child_id);
-  if(!childId || isNaN(childId)){
-    return res.status(400).json({ error: 'Invalid child ID' });
-  }
+  const childParam = req.params.child_id;
   try{
-    const child = await getChildById(childId);
+    let child = null;
+    const childId = parseInt(childParam);
+    if(!isNaN(childId)){
+      child = await getChildById(childId);
+    }
+    if(!child){
+      child = await getChildByExternalId(childParam);
+    }
     if(!child) return res.status(404).json({ error: 'Child not found' });
     return res.json(child);
   }catch(err){

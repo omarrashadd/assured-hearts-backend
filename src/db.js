@@ -275,6 +275,13 @@ async function getChildById(child_id){
   return result.rows[0] || null;
 }
 
+async function getChildByExternalId(external_id){
+  if(!pool) return null;
+  const sql = 'SELECT id, external_id, family_id, COALESCE(name,\'Child\') as name, ages, frequency, preferred_schedule, special_needs, parent_id FROM children WHERE external_id=$1';
+  const result = await pool.query(sql, [external_id]);
+  return result.rows[0] || null;
+}
+
 async function getOrCreateChild(user_id, childName){
   if(!pool) return null;
   
