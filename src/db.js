@@ -219,7 +219,7 @@ async function insertChildProfile({ user_id, name, ages, frequency, preferred_sc
     extId
   ];
   const result = await pool.query(sql, params);
-  return result.rows[0]?.id;
+  return result.rows[0] || null;
 }
 
 async function findUserByEmail(email){

@@ -104,7 +104,7 @@ router.post('/children', async (req, res) => {
   }
 
   try{
-    const childId = await insertChildProfile({
+    const childRow = await insertChildProfile({
       user_id,
       name: childName,
       ages,
@@ -114,8 +114,8 @@ router.post('/children', async (req, res) => {
       family_id: family_id || null,
       external_id: child_id || null
     });
-    console.log('Child profile created:', childId, 'for user:', user_id);
-    return res.status(200).json({ message: 'Child profile created', childId });
+    console.log('Child profile created:', childRow?.id, 'for user:', user_id, 'external_id:', childRow?.external_id);
+    return res.status(200).json({ message: 'Child profile created', childId: childRow?.id, externalId: childRow?.external_id });
   }catch(err){
     console.error('Child profile create failed:', err);
     return res.status(500).json({ error: 'Failed to create child profile' });
