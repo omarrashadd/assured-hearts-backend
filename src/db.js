@@ -314,6 +314,64 @@ async function getParentSessions(user_id){
   return result.rows || [];
 }
 
+async function getProviderProfile(provider_id){
+  if(!pool) return null;
+  const sql = `
+    SELECT pr.id, pr.user_id, pr.name, pr.email, pr.phone, pr.city, pr.province
+    FROM providers pr
+    WHERE pr.id = $1 OR pr.user_id = $1
+  `;
+  const result = await pool.query(sql, [provider_id]);
+  return result.rows[0] || null;
+}
+
+async function getProviderSessions(provider_id){
+  if(!pool) return [];
+  const sql = `
+    SELECT s.id, s.session_date, s.start_time, s.end_time, s.status,
+           u.name as parent_name, u.city as parent_city
+    FROM sessions s
+    LEFT JOIN users u ON s.parent_id = u.id
+    WHERE s.provider_id = $1 AND s.session_date >= CURRENT_DATE
+    ORDER BY s.session_date ASC, s.start_time ASC
+  `;
+  const result = await pool.query(sql, [provider_id]);
+  return result.rows || [];
+}
+
+async function getProviderStats(provider_id){
+  if(!pool) return { active:0, pending:0, hours_scheduled:0, hours_month:0, earnings:0, tips:0 };
+  const stats = { active:0, pending:0, hours_scheduled:0, hours_month:0, earnings:0, tips:0 };
+  try{
+    const activeSql = `
+      SELECT COUNT(*) AS c
+      FROM sessions
+      WHERE provider_id=$1 AND status NOT IN ('cancelled') AND session_date >= CURRENT_DATE
+    `;
+    const activeRes = await pool.query(activeSql, [provider_id]);
+    stats.active = Number(activeRes.rows[0]?.c || 0);
+
+    const hoursSchedSql = `
+      SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time))/3600.0),0) AS h
+      FROM sessions
+      WHERE provider_id=$1 AND session_date >= CURRENT_DATE
+    `;
+    const hsRes = await pool.query(hoursSchedSql, [provider_id]);
+    stats.hours_scheduled = Number(hsRes.rows[0]?.h || 0).toFixed(1);
+
+    const hoursMonthSql = `
+      SELECT COALESCE(SUM(EXTRACT(EPOCH FROM (end_time - start_time))/3600.0),0) AS h
+      FROM sessions
+      WHERE provider_id=$1 AND date_trunc('month', session_date) = date_trunc('month', CURRENT_DATE)
+    `;
+    const hmRes = await pool.query(hoursMonthSql, [provider_id]);
+    stats.hours_month = Number(hmRes.rows[0]?.h || 0).toFixed(1);
+  }catch(err){
+    console.error('[DB] getProviderStats failed:', err.message);
+  }
+  return stats;
+}
+
 async function getPendingApplications(){
   if(!pool) return [];
   const sql = `
@@ -398,4 +456,4 @@ async function approveApplication(applicationId){
   return providerId;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats };

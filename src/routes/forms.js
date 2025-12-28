@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats } = require('../db');
 
 const router = express.Router();
 
@@ -202,6 +202,24 @@ router.get('/child/:child_id', async (req, res) => {
   }catch(err){
     console.error('Child fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch child profile' });
+  }
+});
+
+// Provider dashboard
+router.get('/provider/:provider_id', async (req, res) => {
+  const providerId = parseInt(req.params.provider_id);
+  if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
+  try{
+    let profile = await getProviderProfile(providerId);
+    if(!profile){
+      profile = { id: providerId, user_id: providerId, name: 'Caregiver', email: null, phone: null, city: null, province: null };
+    }
+    const sessions = await getProviderSessions(providerId);
+    const stats = await getProviderStats(providerId);
+    return res.json({ profile, sessions, stats, requests: [], messages: [], reviews: [] });
+  }catch(err){
+    console.error('Provider dashboard fetch failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch provider dashboard' });
   }
 });
 
