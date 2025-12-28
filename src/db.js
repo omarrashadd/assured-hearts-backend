@@ -20,7 +20,10 @@ async function init(){
       "ALTER TABLE providers ADD COLUMN IF NOT EXISTS age_groups JSONB",
       "ALTER TABLE providers ADD COLUMN IF NOT EXISTS availability JSONB",
       "ALTER TABLE providers ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
-      "CREATE INDEX IF NOT EXISTS idx_providers_user_id ON providers(user_id)"
+      "CREATE INDEX IF NOT EXISTS idx_providers_user_id ON providers(user_id)",
+      "ALTER TABLE children ADD COLUMN IF NOT EXISTS family_id TEXT",
+      "ALTER TABLE children ADD COLUMN IF NOT EXISTS external_id TEXT UNIQUE",
+      "CREATE INDEX IF NOT EXISTS idx_children_parent_id ON children(parent_id)"
     ];
     
     for (const migration of migrations) {
@@ -197,10 +200,24 @@ async function insertProviderApplication({ user_id, experience, availability, ag
   return result.rows[0]?.id;
 }
 
-async function insertChildProfile({ user_id, ages, frequency, preferred_schedule, special_needs }){
+async function insertChildProfile({ user_id, name, ages, frequency, preferred_schedule, special_needs, family_id, external_id }){
   if(!pool) return;
-  const sql = 'INSERT INTO children(parent_id,ages,frequency,preferred_schedule,special_needs) VALUES($1,$2,$3,$4,$5) RETURNING id';
-  const params = [user_id, ages ? JSON.stringify(ages) : null, frequency || null, preferred_schedule || null, special_needs || null];
+  const extId = external_id || `child_${Date.now()}_${Math.floor(Math.random()*1e6)}`;
+  const sql = `
+    INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs, family_id, external_id)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8)
+    RETURNING id, external_id
+  `;
+  const params = [
+    user_id,
+    name || 'Child',
+    ages ? JSON.stringify(ages) : null,
+    frequency || null,
+    preferred_schedule || null,
+    special_needs || null,
+    family_id || null,
+    extId
+  ];
   const result = await pool.query(sql, params);
   return result.rows[0]?.id;
 }
@@ -228,7 +245,12 @@ async function insertWaitlistEntry({ email, city }){
 
 async function getParentChildren(user_id){
   if(!pool) return [];
-  const sql = 'SELECT id, name, ages, frequency, preferred_schedule, special_needs, created_at FROM children WHERE parent_id=$1 ORDER BY created_at DESC';
+  const sql = `
+    SELECT id, external_id, family_id, COALESCE(name,'Child') as name, ages, frequency, preferred_schedule, special_needs, created_at 
+    FROM children 
+    WHERE parent_id=$1 
+    ORDER BY created_at DESC
+  `;
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
 }
@@ -242,8 +264,15 @@ async function getParentProfile(user_id){
 
 async function updateChild({ child_id, name, ages, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
-  const sql = 'UPDATE children SET ages=$1, frequency=$2, preferred_schedule=$3, special_needs=$4 WHERE id=$5';
-  await pool.query(sql, [ages ? JSON.stringify(ages) : null, frequency, preferred_schedule, special_needs, child_id]);
+  const sql = 'UPDATE children SET name=$1, ages=$2, frequency=$3, preferred_schedule=$4, special_needs=$5 WHERE id=$6';
+  await pool.query(sql, [name || null, ages ? JSON.stringify(ages) : null, frequency, preferred_schedule, special_needs, child_id]);
+}
+
+async function getChildById(child_id){
+  if(!pool) return null;
+  const sql = 'SELECT id, external_id, family_id, COALESCE(name,\'Child\') as name, ages, frequency, preferred_schedule, special_needs, parent_id FROM children WHERE id=$1';
+  const result = await pool.query(sql, [child_id]);
+  return result.rows[0] || null;
 }
 
 async function getOrCreateChild(user_id, childName){

@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById } = require('../db');
 
 const router = express.Router();
 
@@ -80,28 +80,39 @@ router.post('/provider', async (req, res) => {
 });
 
 router.post('/children', async (req, res) => {
-  console.log('Child demographics received:', { user_id: req.body.user_id, num_children: req.body.numChildren });
+  console.log('Child demographics received:', { user_id: req.body.user_id, name: req.body.name, ages: req.body.ages });
   
   if (!req.body.user_id) {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
-  const { user_id, numChildren, frequency, preferredSchedule, specialNeeds } = req.body;
+  const { user_id, numChildren, frequency, preferredSchedule, specialNeeds, name, family_id, child_id } = req.body;
+  const childName = name || req.body.childName || 'Child';
   
-  // Collect ages from dynamic fields (child1Age, child2Age, etc.)
-  const ages = [];
-  for (let i = 1; i <= numChildren; i++) {
-    const age = req.body[`child${i}Age`];
-    if (age) ages.push(parseInt(age));
+  // Collect ages from dynamic fields or direct array/field
+  let ages = [];
+  if(Array.isArray(req.body.ages)){
+    ages = req.body.ages.map(a=> parseInt(a)).filter(n=> !isNaN(n));
+  } else if(req.body.childAge){
+    const n = parseInt(req.body.childAge);
+    if(!isNaN(n)) ages.push(n);
+  } else if(numChildren){
+    for (let i = 1; i <= numChildren; i++) {
+      const age = req.body[`child${i}Age`];
+      if (age) ages.push(parseInt(age));
+    }
   }
 
   try{
     const childId = await insertChildProfile({
       user_id,
+      name: childName,
       ages,
       frequency,
       preferred_schedule: preferredSchedule,
-      special_needs: specialNeeds
+      special_needs: specialNeeds,
+      family_id: family_id || null,
+      external_id: child_id || null
     });
     console.log('Child profile created:', childId, 'for user:', user_id);
     return res.status(200).json({ message: 'Child profile created', childId });
@@ -190,6 +201,22 @@ router.put('/child/:child_id', async (req, res) => {
   }catch(err){
     console.error('Child update failed:', err);
     return res.status(500).json({ error: 'Failed to update child profile' });
+  }
+});
+
+// Get single child profile
+router.get('/child/:child_id', async (req, res) => {
+  const childId = parseInt(req.params.child_id);
+  if(!childId || isNaN(childId)){
+    return res.status(400).json({ error: 'Invalid child ID' });
+  }
+  try{
+    const child = await getChildById(childId);
+    if(!child) return res.status(404).json({ error: 'Child not found' });
+    return res.json(child);
+  }catch(err){
+    console.error('Child fetch failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch child profile' });
   }
 });
 
@@ -302,4 +329,3 @@ router.post('/admin/applications/:id/approve', async (req, res) => {
 });
 
 module.exports = router;
-
