@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, getChildByExternalId } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById } = require('../db');
 
 const router = express.Router();
 
@@ -86,7 +86,11 @@ router.post('/children', async (req, res) => {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
-  const { user_id, first_name, last_name, age, frequency, preferredSchedule, specialNeeds } = req.body;
+  const user_id = parseInt(req.body.user_id);
+  if(!user_id || Number.isNaN(user_id)){
+    return res.status(400).json({ error: 'Invalid user_id' });
+  }
+  const { first_name, last_name, age, frequency, preferredSchedule, specialNeeds } = req.body;
 
   try{
     const childRow = await insertChildProfile({

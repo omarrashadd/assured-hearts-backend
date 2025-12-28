@@ -108,48 +108,6 @@ async function init(){
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
     
-    // Migration: Add name column to children table if it doesn't exist
-    try{
-      await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS name TEXT;`);
-      console.log('[DB] Added name column to children table');
-    }catch(migErr){
-      console.log('[DB] Add name column error:', migErr.message);
-    }
-    
-    // Migration: Fix foreign key constraint on children table to point to users, not parents
-    try{
-      // Drop the incorrect foreign key constraint
-      await pool.query(`
-        ALTER TABLE children 
-        DROP CONSTRAINT IF EXISTS children_parent_id_fkey;
-      `);
-      // Add the correct constraint pointing to users table
-      await pool.query(`
-        ALTER TABLE children 
-        ADD CONSTRAINT children_parent_id_fkey 
-        FOREIGN KEY (parent_id) REFERENCES users(id) ON DELETE CASCADE;
-      `);
-      console.log('[DB] Fixed children foreign key constraint to reference users table');
-    }catch(migErr){
-      console.log('[DB] Children FK migration error:', migErr.message);
-    }
-    
-    // Migration: Fix foreign key constraint on childcare_requests table to point to users, not parents
-    try{
-      await pool.query(`
-        ALTER TABLE childcare_requests 
-        DROP CONSTRAINT IF EXISTS childcare_requests_parent_id_fkey;
-      `);
-      await pool.query(`
-        ALTER TABLE childcare_requests 
-        ADD CONSTRAINT childcare_requests_parent_id_fkey 
-        FOREIGN KEY (parent_id) REFERENCES users(id) ON DELETE CASCADE;
-      `);
-      console.log('[DB] Fixed childcare_requests foreign key constraint to reference users table');
-    }catch(migErr){
-      console.log('[DB] Childcare requests FK migration error:', migErr.message);
-    }
-    
   }catch(err){
     console.error('[DB] Init failed', err);
   }
@@ -247,10 +205,18 @@ async function getParentProfile(user_id){
   return result.rows[0] || null;
 }
 
-async function updateChild({ child_id, name, ages, frequency, preferred_schedule, special_needs }){
+async function updateChild({ child_id, first_name, last_name, age, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
   const sql = 'UPDATE children SET first_name=$1, last_name=$2, age=$3, frequency=$4, preferred_schedule=$5, special_needs=$6 WHERE id=$7';
-  await pool.query(sql, [name?.first || null, name?.last || null, name?.age !== undefined && name?.age !== null && name?.age !== '' ? Number(name.age) : null, frequency || null, preferred_schedule || null, special_needs || null, child_id]);
+  await pool.query(sql, [
+    first_name || 'Child',
+    last_name || null,
+    age !== undefined && age !== null && age !== '' ? Number(age) : null,
+    frequency || null,
+    preferred_schedule || null,
+    special_needs || null,
+    child_id
+  ]);
 }
 
 async function getChildById(child_id){
@@ -265,7 +231,7 @@ async function getOrCreateChild(user_id, childName){
   
   // If a name is provided, try to find existing child with that name
   if(childName && childName.trim()){
-    const findSql = 'SELECT id FROM children WHERE parent_id=$1 AND name=$2 LIMIT 1';
+    const findSql = 'SELECT id FROM children WHERE parent_id=$1 AND first_name=$2 LIMIT 1';
     const findResult = await pool.query(findSql, [user_id, childName.trim()]);
     if(findResult.rows.length > 0){
       return findResult.rows[0].id;
