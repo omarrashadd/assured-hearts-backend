@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount } = require('../db');
 
 const router = express.Router();
 
@@ -202,6 +202,20 @@ router.get('/child/:child_id', async (req, res) => {
   }catch(err){
     console.error('Child fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch child profile' });
+  }
+});
+
+// Record a referral for a parent
+router.post('/referral', async (req, res) => {
+  const userId = parseInt(req.body.user_id);
+  if(!userId || isNaN(userId)) return res.status(400).json({ error: 'Invalid user ID' });
+  try{
+    const count = await incrementReferralCount(userId);
+    if(count === null) return res.status(404).json({ error: 'Parent not found' });
+    return res.json({ referrals_count: count });
+  }catch(err){
+    console.error('Referral record failed:', err);
+    return res.status(500).json({ error: 'Failed to record referral' });
   }
 });
 

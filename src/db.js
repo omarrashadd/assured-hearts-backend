@@ -22,6 +22,7 @@ async function init(){
       type TEXT NOT NULL DEFAULT 'parent',
       city TEXT,
       province TEXT,
+      referrals_count INTEGER DEFAULT 0,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
   const createProviderApps = `
@@ -94,6 +95,7 @@ async function init(){
     await pool.query(createUsers);
     await pool.query(createProviderApps);
     await pool.query(createChildren);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrals_count INTEGER DEFAULT 0`);
     // Ensure new child columns exist for legacy tables
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS first_name TEXT`);
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_name TEXT`);
@@ -205,7 +207,7 @@ async function getParentChildren(user_id){
 
 async function getParentProfile(user_id){
   if(!pool) return null;
-  const sql = 'SELECT id, name, email, phone, city, province, created_at FROM users WHERE id=$1 AND type=\'parent\'';
+  const sql = 'SELECT id, name, email, phone, city, province, referrals_count, created_at FROM users WHERE id=$1 AND type=\'parent\'';
   const result = await pool.query(sql, [user_id]);
   return result.rows[0] || null;
 }
@@ -234,6 +236,13 @@ async function getChildById(child_id){
     console.error('[DB] getChildById failed:', err.message);
     return null;
   }
+}
+
+async function incrementReferralCount(user_id){
+  if(!pool) return null;
+  const sql = 'UPDATE users SET referrals_count = COALESCE(referrals_count,0) + 1 WHERE id=$1 RETURNING referrals_count';
+  const result = await pool.query(sql, [user_id]);
+  return result.rows[0]?.referrals_count || null;
 }
 
 async function getOrCreateChild(user_id, childName){
