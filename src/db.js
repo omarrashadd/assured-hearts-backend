@@ -12,14 +12,6 @@ const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null;
 async function init(){
   if(!pool) return;
   
-  try {
-    // Clean reset for children table per latest schema
-    await pool.query('DROP TABLE IF EXISTS children CASCADE');
-    console.log('[DB] Dropped children table');
-  } catch(err) {
-    console.error('[DB] Drop children failed:', err.message);
-  }
-  
   const createUsers = `
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
@@ -102,6 +94,19 @@ async function init(){
     await pool.query(createUsers);
     await pool.query(createProviderApps);
     await pool.query(createChildren);
+    // Ensure new child columns exist for legacy tables
+    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS first_name TEXT`);
+    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_name TEXT`);
+    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS age INTEGER`);
+    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS frequency TEXT`);
+    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS preferred_schedule TEXT`);
+    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS special_needs TEXT`);
+    // Backfill first_name from legacy name column if present
+    try{
+      await pool.query(`UPDATE children SET first_name = COALESCE(first_name, name, 'Child') WHERE first_name IS NULL OR first_name = ''`);
+    }catch(_err){
+      // ignore if legacy name column does not exist
+    }
     await pool.query(createWaitlist);
     await pool.query(createProviders);
     await pool.query(createChildcareRequests);
@@ -222,8 +227,13 @@ async function updateChild({ child_id, first_name, last_name, age, frequency, pr
 async function getChildById(child_id){
   if(!pool) return null;
   const sql = 'SELECT id, parent_id, COALESCE(first_name,\'Child\') as first_name, last_name, age, frequency, preferred_schedule, special_needs FROM children WHERE id=$1';
-  const result = await pool.query(sql, [child_id]);
-  return result.rows[0] || null;
+  try{
+    const result = await pool.query(sql, [child_id]);
+    return result.rows[0] || null;
+  }catch(err){
+    console.error('[DB] getChildById failed:', err.message);
+    return null;
+  }
 }
 
 async function getOrCreateChild(user_id, childName){
