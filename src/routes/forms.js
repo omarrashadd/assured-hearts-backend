@@ -80,42 +80,26 @@ router.post('/provider', async (req, res) => {
 });
 
 router.post('/children', async (req, res) => {
-  console.log('Child demographics received:', { user_id: req.body.user_id, name: req.body.name, ages: req.body.ages });
+  console.log('Child create received:', { user_id: req.body.user_id, first_name: req.body.first_name, last_name: req.body.last_name, age: req.body.age });
   
   if (!req.body.user_id) {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
-  const { user_id, numChildren, frequency, preferredSchedule, specialNeeds, name, family_id, child_id } = req.body;
-  const childName = name || req.body.childName || 'Child';
-  
-  // Collect ages from dynamic fields or direct array/field
-  let ages = [];
-  if(Array.isArray(req.body.ages)){
-    ages = req.body.ages.map(a=> parseInt(a)).filter(n=> !isNaN(n));
-  } else if(req.body.childAge){
-    const n = parseInt(req.body.childAge);
-    if(!isNaN(n)) ages.push(n);
-  } else if(numChildren){
-    for (let i = 1; i <= numChildren; i++) {
-      const age = req.body[`child${i}Age`];
-      if (age) ages.push(parseInt(age));
-    }
-  }
+  const { user_id, first_name, last_name, age, frequency, preferredSchedule, specialNeeds } = req.body;
 
   try{
     const childRow = await insertChildProfile({
       user_id,
-      name: childName,
-      ages,
+      first_name: first_name || req.body.childName || 'Child',
+      last_name: last_name || null,
+      age,
       frequency,
       preferred_schedule: preferredSchedule,
-      special_needs: specialNeeds,
-      family_id: family_id || null,
-      external_id: child_id || null
+      special_needs: specialNeeds
     });
-    console.log('Child profile created:', childRow?.id, 'for user:', user_id, 'external_id:', childRow?.external_id);
-    return res.status(200).json({ message: 'Child profile created', childId: childRow?.id, externalId: childRow?.external_id });
+    console.log('Child profile created:', childRow?.id, 'for user:', user_id);
+    return res.status(200).json({ message: 'Child profile created', childId: childRow?.id });
   }catch(err){
     console.error('Child profile create failed:', err);
     return res.status(500).json({ error: 'Failed to create child profile' });
@@ -183,24 +167,20 @@ router.get('/parent/:user_id', async (req, res) => {
 
 // Update child profile
 router.put('/child/:child_id', async (req, res) => {
-  const childParam = req.params.child_id;
+  const childId = parseInt(req.params.child_id);
+  if(!childId || isNaN(childId)) return res.status(400).json({ error: 'Invalid child ID' });
   try{
-    const { name, ages, frequency, preferred_schedule, special_needs } = req.body;
-    let targetId = parseInt(childParam);
-    if(isNaN(targetId)){
-      const childRow = await getChildByExternalId(childParam);
-      if(!childRow) return res.status(404).json({ error: 'Child not found' });
-      targetId = childRow.id;
-    }
+    const { first_name, last_name, age, frequency, preferredSchedule, specialNeeds } = req.body;
     await updateChild({
-      child_id: targetId,
-      name,
-      ages,
+      child_id: childId,
+      first_name,
+      last_name,
+      age,
       frequency,
-      preferred_schedule,
-      special_needs
+      preferred_schedule: preferredSchedule,
+      special_needs: specialNeeds
     });
-    return res.json({ message: 'Child profile updated', childId: targetId });
+    return res.json({ message: 'Child profile updated', childId });
   }catch(err){
     console.error('Child update failed:', err);
     return res.status(500).json({ error: 'Failed to update child profile' });
@@ -209,16 +189,10 @@ router.put('/child/:child_id', async (req, res) => {
 
 // Get single child profile
 router.get('/child/:child_id', async (req, res) => {
-  const childParam = req.params.child_id;
+  const childId = parseInt(req.params.child_id);
+  if(!childId || isNaN(childId)) return res.status(400).json({ error: 'Invalid child ID' });
   try{
-    let child = null;
-    const childId = parseInt(childParam);
-    if(!isNaN(childId)){
-      child = await getChildById(childId);
-    }
-    if(!child){
-      child = await getChildByExternalId(childParam);
-    }
+    const child = await getChildById(childId);
     if(!child) return res.status(404).json({ error: 'Child not found' });
     return res.json(child);
   }catch(err){

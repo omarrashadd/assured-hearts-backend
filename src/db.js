@@ -13,25 +13,11 @@ async function init(){
   if(!pool) return;
   
   try {
-    // Migration: Add missing columns to providers table if they don't exist
-    const migrations = [
-      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE",
-      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS certifications TEXT",
-      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS age_groups JSONB",
-      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS availability JSONB",
-      "ALTER TABLE providers ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()",
-      "CREATE INDEX IF NOT EXISTS idx_providers_user_id ON providers(user_id)",
-      "ALTER TABLE children ADD COLUMN IF NOT EXISTS family_id TEXT",
-      "ALTER TABLE children ADD COLUMN IF NOT EXISTS external_id TEXT UNIQUE",
-      "CREATE INDEX IF NOT EXISTS idx_children_parent_id ON children(parent_id)"
-    ];
-    
-    for (const migration of migrations) {
-      await pool.query(migration);
-    }
-    console.log('[DB] Migrations applied successfully');
+    // Clean reset for children table per latest schema
+    await pool.query('DROP TABLE IF EXISTS children CASCADE');
+    console.log('[DB] Dropped children table');
   } catch(err) {
-    console.error('[DB] Migration failed:', err.message);
+    console.error('[DB] Drop children failed:', err.message);
   }
   
   const createUsers = `
@@ -60,8 +46,9 @@ async function init(){
     CREATE TABLE IF NOT EXISTS children (
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      name TEXT,
-      ages JSONB,
+      first_name TEXT NOT NULL,
+      last_name TEXT,
+      age INTEGER,
       frequency TEXT,
       preferred_schedule TEXT,
       special_needs TEXT,
@@ -200,22 +187,21 @@ async function insertProviderApplication({ user_id, experience, availability, ag
   return result.rows[0]?.id;
 }
 
-async function insertChildProfile({ user_id, name, ages, frequency, preferred_schedule, special_needs, family_id, external_id }){
+async function insertChildProfile({ user_id, first_name, last_name, age, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
   const sql = `
-    INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs, family_id, external_id)
-    VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-    RETURNING id, external_id
+    INSERT INTO children(parent_id, first_name, last_name, age, frequency, preferred_schedule, special_needs)
+    VALUES($1,$2,$3,$4,$5,$6,$7)
+    RETURNING id
   `;
   const params = [
     user_id,
-    name || 'Child',
-    ages ? JSON.stringify(ages) : null,
+    first_name || 'Child',
+    last_name || null,
+    age !== undefined && age !== null && age !== '' ? Number(age) : null,
     frequency || null,
     preferred_schedule || null,
-    special_needs || null,
-    family_id || null,
-    external_id || null
+    special_needs || null
   ];
   const result = await pool.query(sql, params);
   return result.rows[0] || null;
@@ -245,7 +231,7 @@ async function insertWaitlistEntry({ email, city }){
 async function getParentChildren(user_id){
   if(!pool) return [];
   const sql = `
-    SELECT id, external_id, family_id, COALESCE(name,'Child') as name, ages, frequency, preferred_schedule, special_needs, created_at 
+    SELECT id, parent_id, COALESCE(first_name,'Child') as first_name, last_name, age, frequency, preferred_schedule, special_needs, created_at 
     FROM children 
     WHERE parent_id=$1 
     ORDER BY created_at DESC
@@ -263,21 +249,14 @@ async function getParentProfile(user_id){
 
 async function updateChild({ child_id, name, ages, frequency, preferred_schedule, special_needs }){
   if(!pool) return;
-  const sql = 'UPDATE children SET name=$1, ages=$2, frequency=$3, preferred_schedule=$4, special_needs=$5 WHERE id=$6';
-  await pool.query(sql, [name || null, ages ? JSON.stringify(ages) : null, frequency, preferred_schedule, special_needs, child_id]);
+  const sql = 'UPDATE children SET first_name=$1, last_name=$2, age=$3, frequency=$4, preferred_schedule=$5, special_needs=$6 WHERE id=$7';
+  await pool.query(sql, [name?.first || null, name?.last || null, name?.age !== undefined && name?.age !== null && name?.age !== '' ? Number(name.age) : null, frequency || null, preferred_schedule || null, special_needs || null, child_id]);
 }
 
 async function getChildById(child_id){
   if(!pool) return null;
-  const sql = 'SELECT id, external_id, family_id, COALESCE(name,\'Child\') as name, ages, frequency, preferred_schedule, special_needs, parent_id FROM children WHERE id=$1';
+  const sql = 'SELECT id, parent_id, COALESCE(first_name,\'Child\') as first_name, last_name, age, frequency, preferred_schedule, special_needs FROM children WHERE id=$1';
   const result = await pool.query(sql, [child_id]);
-  return result.rows[0] || null;
-}
-
-async function getChildByExternalId(external_id){
-  if(!pool) return null;
-  const sql = 'SELECT id, external_id, family_id, COALESCE(name,\'Child\') as name, ages, frequency, preferred_schedule, special_needs, parent_id FROM children WHERE external_id=$1';
-  const result = await pool.query(sql, [external_id]);
   return result.rows[0] || null;
 }
 
@@ -293,8 +272,8 @@ async function getOrCreateChild(user_id, childName){
     }
     
     // Create new child with name
-    const createSql = 'INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs) VALUES($1, $2, $3, $4, $5, $6) RETURNING id';
-    const createResult = await pool.query(createSql, [user_id, childName.trim(), null, null, null, null]);
+    const createSql = 'INSERT INTO children(parent_id, first_name) VALUES($1, $2) RETURNING id';
+    const createResult = await pool.query(createSql, [user_id, childName.trim()]);
     return createResult.rows[0]?.id;
   }
   
@@ -315,7 +294,7 @@ async function getParentRequests(user_id){
   if(!pool) return [];
   const sql = `
     SELECT cr.id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
-           c.name as child_name
+           CONCAT_WS(' ', c.first_name, c.last_name) as child_name
     FROM childcare_requests cr
     LEFT JOIN children c ON cr.child_id = c.id
     WHERE cr.parent_id=$1 
