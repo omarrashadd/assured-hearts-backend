@@ -202,7 +202,6 @@ async function insertProviderApplication({ user_id, experience, availability, ag
 
 async function insertChildProfile({ user_id, name, ages, frequency, preferred_schedule, special_needs, family_id, external_id }){
   if(!pool) return;
-  const extId = external_id || `child_${Date.now()}_${Math.floor(Math.random()*1e6)}`;
   const sql = `
     INSERT INTO children(parent_id, name, ages, frequency, preferred_schedule, special_needs, family_id, external_id)
     VALUES($1,$2,$3,$4,$5,$6,$7,$8)
@@ -216,7 +215,7 @@ async function insertChildProfile({ user_id, name, ages, frequency, preferred_sc
     preferred_schedule || null,
     special_needs || null,
     family_id || null,
-    extId
+    external_id || null
   ];
   const result = await pool.query(sql, params);
   return result.rows[0] || null;
