@@ -241,8 +241,19 @@ async function getChildById(child_id){
 async function incrementReferralCount(user_id){
   if(!pool) return null;
   const sql = 'UPDATE users SET referrals_count = COALESCE(referrals_count,0) + 1 WHERE id=$1 RETURNING referrals_count';
-  const result = await pool.query(sql, [user_id]);
-  return result.rows[0]?.referrals_count || null;
+  try{
+    const result = await pool.query(sql, [user_id]);
+    return result.rows[0]?.referrals_count || null;
+  }catch(err){
+    // If column missing for some reason, add it and retry once
+    if(err.code === '42703'){
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrals_count INTEGER DEFAULT 0`);
+      const retry = await pool.query(sql, [user_id]);
+      return retry.rows[0]?.referrals_count || null;
+    }
+    console.error('[DB] incrementReferralCount failed:', err.message);
+    throw err;
+  }
 }
 
 async function getOrCreateChild(user_id, childName){
