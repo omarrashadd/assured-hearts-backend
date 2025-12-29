@@ -296,15 +296,17 @@ router.get('/messages/:user_id', async (req, res) => {
 
 // Messaging: send a message
 router.post('/messages', async (req, res) => {
-  const { sender_id, receiver_id, body } = req.body || {};
-  if(!sender_id || !receiver_id || !body){
-    return res.status(400).json({ error: 'sender_id, receiver_id, and body are required' });
+  const sender_id = parseInt(req.body?.sender_id, 10);
+  const receiver_id = parseInt(req.body?.receiver_id, 10);
+  const body = req.body?.body || '';
+  if(!sender_id || !receiver_id){
+    return res.status(400).json({ error: 'sender_id and receiver_id are required' });
   }
   try{
     const msg = await insertMessage({ sender_id, receiver_id, body });
     return res.json({ message: msg });
   }catch(err){
-    console.error('Message send failed:', err);
+    console.error('Message send failed:', err.message);
     return res.status(500).json({ error: 'Failed to send message' });
   }
 });

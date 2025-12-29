@@ -380,10 +380,11 @@ async function getParentSessions(user_id){
 }
 
 // Messaging
-async function insertMessage({ sender_id, receiver_id, body, attachment_url=null, attachment_name=null, attachment_type=null }){
+async function insertMessage({ sender_id, receiver_id, body }){
   if(!pool) return null;
-  const sql = `INSERT INTO messages(sender_id, receiver_id, body, attachment_url, attachment_name, attachment_type) VALUES($1,$2,$3,$4,$5,$6) RETURNING id, created_at, attachment_url, attachment_name, attachment_type`;
-  const res = await pool.query(sql, [sender_id, receiver_id, body, attachment_url, attachment_name, attachment_type]);
+  const safeBody = body || '';
+  const sql = `INSERT INTO messages(sender_id, receiver_id, body) VALUES($1,$2,$3) RETURNING id, created_at`;
+  const res = await pool.query(sql, [sender_id, receiver_id, safeBody]);
   return res.rows[0] || null;
 }
 
@@ -400,7 +401,7 @@ async function markMessagesRead({ user_id, other_id }){
 async function getMessagesForUser(user_id){
   if(!pool) return [];
   const sql = `
-    SELECT m.id, m.sender_id, m.receiver_id, m.body, m.attachment_url, m.attachment_name, m.attachment_type, m.created_at, m.read_at,
+    SELECT m.id, m.sender_id, m.receiver_id, m.body, m.created_at, m.read_at,
            CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END AS other_id,
            u.name AS other_name
     FROM messages m
