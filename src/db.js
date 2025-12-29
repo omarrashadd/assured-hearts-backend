@@ -309,8 +309,10 @@ async function getParentRequests(user_id){
     SELECT cr.id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
            cr.start_at, cr.end_at, cr.rate, cr.provider_id,
            CONCAT_WS(' ', c.first_name, c.last_name) as child_name
+           , p.name as provider_name
     FROM childcare_requests cr
     LEFT JOIN children c ON cr.child_id = c.id
+    LEFT JOIN providers p ON cr.provider_id = p.id
     WHERE cr.parent_id=$1 
     ORDER BY cr.created_at DESC
   `;
