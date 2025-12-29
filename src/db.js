@@ -365,7 +365,7 @@ async function getParentSessions(user_id){
   if(!pool) return [];
   const sql = `
     SELECT s.id, s.session_date, s.start_time, s.end_time, s.status, 
-           p.name as provider_name, p.city as provider_city
+           p.id as provider_id, p.name as provider_name, p.city as provider_city
     FROM sessions s
     LEFT JOIN providers p ON s.provider_id = p.id
     WHERE s.parent_id=$1 AND s.session_date >= CURRENT_DATE
@@ -445,7 +445,7 @@ async function getProviderSessions(provider_id){
   if(!pool) return [];
   const sql = `
     SELECT s.id, s.session_date, s.start_time, s.end_time, s.status,
-           u.name as parent_name, u.city as parent_city
+           u.id as parent_id, u.name as parent_name, u.city as parent_city
     FROM sessions s
     LEFT JOIN users u ON s.parent_id = u.id
     WHERE s.provider_id = $1 AND s.session_date >= CURRENT_DATE
