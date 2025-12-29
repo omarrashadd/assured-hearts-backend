@@ -289,18 +289,19 @@ router.get('/messages/:user_id', async (req, res) => {
     return res.json({ messages });
   }catch(err){
     console.error('Messages fetch failed:', err);
-    return res.status(500).json({ error: 'Failed to fetch messages' });
+    // Fail open with empty list so chat doesn't break the UI
+    return res.json({ messages: [] });
   }
 });
 
 // Messaging: send a message
 router.post('/messages', async (req, res) => {
-  const { sender_id, receiver_id, body, attachment_url, attachment_name, attachment_type } = req.body || {};
-  if(!sender_id || !receiver_id || (!body && !attachment_url)){
-    return res.status(400).json({ error: 'sender_id, receiver_id, and body or attachment are required' });
+  const { sender_id, receiver_id, body } = req.body || {};
+  if(!sender_id || !receiver_id || !body){
+    return res.status(400).json({ error: 'sender_id, receiver_id, and body are required' });
   }
   try{
-    const msg = await insertMessage({ sender_id, receiver_id, body: body || '', attachment_url: attachment_url || null, attachment_name: attachment_name || null, attachment_type: attachment_type || null });
+    const msg = await insertMessage({ sender_id, receiver_id, body });
     return res.json({ message: msg });
   }catch(err){
     console.error('Message send failed:', err);
