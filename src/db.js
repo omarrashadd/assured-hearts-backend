@@ -379,6 +379,13 @@ async function getProviderProfile(provider_id){
   return result.rows[0] || null;
 }
 
+async function getProviderIdForUser(user_id){
+  if(!pool) return null;
+  const sql = 'SELECT id FROM providers WHERE user_id=$1 LIMIT 1';
+  const result = await pool.query(sql, [user_id]);
+  return result.rows[0]?.id || null;
+}
+
 async function listProviders(){
   if(!pool) return [];
   const sql = `
@@ -570,4 +577,4 @@ async function approveApplication(applicationId){
   return providerId;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile, getProviderRequests, createSessionFromRequest, listProviders };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser };

@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser } = require('../db');
 
 const router = express.Router();
 
@@ -210,13 +210,14 @@ router.get('/provider/:provider_id', async (req, res) => {
   const providerId = parseInt(req.params.provider_id);
   if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
   try{
-    let profile = await getProviderProfile(providerId);
+    const resolvedId = await getProviderIdForUser(providerId) || providerId;
+    let profile = await getProviderProfile(resolvedId);
     if(!profile){
-      profile = { id: providerId, user_id: providerId, name: 'Caregiver', email: null, phone: null, city: null, province: null };
+      profile = { id: resolvedId, user_id: providerId, name: 'Caregiver', email: null, phone: null, city: null, province: null };
     }
-    const sessions = await getProviderSessions(providerId);
-    const stats = await getProviderStats(providerId);
-    const requests = await getProviderRequests(providerId);
+    const sessions = await getProviderSessions(resolvedId);
+    const stats = await getProviderStats(resolvedId);
+    const requests = await getProviderRequests(resolvedId);
     return res.json({ profile, sessions, stats, requests, messages: [], reviews: [] });
   }catch(err){
     console.error('Provider dashboard fetch failed:', err);
@@ -333,7 +334,16 @@ router.post('/request/:id/respond', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM childcare_requests WHERE id=$1', [requestId]);
     const reqRow = rows[0];
     if(!reqRow) return res.status(404).json({ error: 'Request not found' });
-    const finalProviderId = provider_id || reqRow.provider_id;
+    // Resolve provider_id from either the request body (may be user_id) or existing row
+    let finalProviderId = provider_id || reqRow.provider_id;
+    if(!finalProviderId && provider_id){
+      const resolved = await getProviderIdForUser(provider_id);
+      finalProviderId = resolved || provider_id;
+    } else if(finalProviderId && provider_id){
+      const resolved = await getProviderIdForUser(provider_id);
+      finalProviderId = resolved || finalProviderId;
+    }
+
     if(action === 'accept'){
       await pool.query('UPDATE childcare_requests SET status=$1, provider_id=$2 WHERE id=$3', ['accepted', finalProviderId, requestId]);
       if(finalProviderId){
