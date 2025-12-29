@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser, insertMessage, getMessagesForUser, markMessagesRead } = require('../db');
 
 const router = express.Router();
 
@@ -261,6 +261,47 @@ router.post('/referral', async (req, res) => {
   }catch(err){
     console.error('Referral record failed:', err);
     return res.status(500).json({ error: 'Failed to record referral' });
+  }
+});
+
+// Messaging: fetch all messages for a user
+router.get('/messages/:user_id', async (req, res) => {
+  const userId = parseInt(req.params.user_id);
+  if(!userId || isNaN(userId)) return res.status(400).json({ error: 'Invalid user ID' });
+  try{
+    const messages = await getMessagesForUser(userId);
+    return res.json({ messages });
+  }catch(err){
+    console.error('Messages fetch failed:', err);
+    return res.status(500).json({ error: 'Failed to fetch messages' });
+  }
+});
+
+// Messaging: send a message
+router.post('/messages', async (req, res) => {
+  const { sender_id, receiver_id, body } = req.body || {};
+  if(!sender_id || !receiver_id || !body){
+    return res.status(400).json({ error: 'sender_id, receiver_id, and body are required' });
+  }
+  try{
+    const msg = await insertMessage({ sender_id, receiver_id, body });
+    return res.json({ message: msg });
+  }catch(err){
+    console.error('Message send failed:', err);
+    return res.status(500).json({ error: 'Failed to send message' });
+  }
+});
+
+// Messaging: mark thread as read
+router.post('/messages/read', async (req, res) => {
+  const { user_id, other_id } = req.body || {};
+  if(!user_id || !other_id) return res.status(400).json({ error: 'user_id and other_id are required' });
+  try{
+    await markMessagesRead({ user_id, other_id });
+    return res.json({ success: true });
+  }catch(err){
+    console.error('Mark read failed:', err);
+    return res.status(500).json({ error: 'Failed to mark messages read' });
   }
 });
 

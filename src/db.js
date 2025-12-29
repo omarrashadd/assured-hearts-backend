@@ -104,9 +104,9 @@ async function init(){
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS first_name TEXT`);
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_name TEXT`);
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS age INTEGER`);
-    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS frequency TEXT`);
-    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS preferred_schedule TEXT`);
-    await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS special_needs TEXT`);
+  await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS frequency TEXT`);
+  await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS preferred_schedule TEXT`);
+  await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS special_needs TEXT`);
     // Backfill first_name from legacy name column if present
     try{
       await pool.query(`UPDATE children SET first_name = COALESCE(first_name, name, 'Child') WHERE first_name IS NULL OR first_name = ''`);
@@ -129,6 +129,14 @@ async function init(){
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS rate TEXT`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS messages (
+      id SERIAL PRIMARY KEY,
+      sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      receiver_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      body TEXT NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      read_at TIMESTAMPTZ
+    )`);
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
@@ -367,6 +375,39 @@ async function getParentSessions(user_id){
   return result.rows || [];
 }
 
+// Messaging
+async function insertMessage({ sender_id, receiver_id, body }){
+  if(!pool) return null;
+  const sql = `INSERT INTO messages(sender_id, receiver_id, body) VALUES($1,$2,$3) RETURNING id, created_at`;
+  const res = await pool.query(sql, [sender_id, receiver_id, body]);
+  return res.rows[0] || null;
+}
+
+async function markMessagesRead({ user_id, other_id }){
+  if(!pool) return;
+  const sql = `
+    UPDATE messages
+    SET read_at = NOW()
+    WHERE receiver_id = $1 AND sender_id = $2 AND read_at IS NULL
+  `;
+  await pool.query(sql, [user_id, other_id]);
+}
+
+async function getMessagesForUser(user_id){
+  if(!pool) return [];
+  const sql = `
+    SELECT m.id, m.sender_id, m.receiver_id, m.body, m.created_at, m.read_at,
+           CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END AS other_id,
+           u.name AS other_name
+    FROM messages m
+    JOIN users u ON u.id = CASE WHEN m.sender_id = $1 THEN m.receiver_id ELSE m.sender_id END
+    WHERE m.sender_id = $1 OR m.receiver_id = $1
+    ORDER BY m.created_at ASC
+  `;
+  const res = await pool.query(sql, [user_id]);
+  return res.rows || [];
+}
+
 async function getProviderProfile(provider_id){
   if(!pool) return null;
   const sql = `
@@ -579,4 +620,4 @@ async function approveApplication(applicationId){
   return providerId;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser, insertMessage, getMessagesForUser, markMessagesRead };
