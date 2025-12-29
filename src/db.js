@@ -125,6 +125,7 @@ async function init(){
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS paused BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS bio TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS rate TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS weekly_hours INTEGER`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS provider_id INTEGER REFERENCES providers(id) ON DELETE SET NULL`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ`);
@@ -419,7 +420,7 @@ async function getProviderProfile(provider_id){
     SELECT pr.id, pr.user_id, pr.name, pr.email, pr.phone, pr.city, pr.province,
            pr.address_line1, pr.address_line2, pr.postal_code,
            pr.payout_method, pr.payout_details, pr.two_factor_enabled, pr.paused,
-           pr.bio, pr.rate
+           pr.bio, pr.rate, pr.availability, pr.weekly_hours
     FROM providers pr
     WHERE pr.id = $1 OR pr.user_id = $1
   `;
@@ -437,7 +438,7 @@ async function getProviderIdForUser(user_id){
 async function listProviders(){
   if(!pool) return [];
   const sql = `
-    SELECT pr.id, pr.user_id, pr.name, pr.city, pr.province, pr.bio, pr.rate
+    SELECT pr.id, pr.user_id, pr.name, pr.city, pr.province, pr.bio, pr.rate, pr.availability, pr.weekly_hours
     FROM providers pr
     ORDER BY pr.created_at DESC
     LIMIT 50
@@ -499,7 +500,7 @@ async function updateProviderProfile(provider_id, fields){
     name, phone, email, city, province,
     address_line1, address_line2, postal_code,
     payout_method, payout_details,
-    two_factor_enabled, paused, bio, rate
+    two_factor_enabled, paused, bio, rate, availability, weekly_hours
   } = fields;
   const sql = `
     UPDATE providers SET
@@ -516,8 +517,10 @@ async function updateProviderProfile(provider_id, fields){
       two_factor_enabled = COALESCE($11, two_factor_enabled),
       paused = COALESCE($12, paused),
       bio = COALESCE($13, bio),
-      rate = COALESCE($14, rate)
-    WHERE id=$15 OR user_id=$15
+      rate = COALESCE($14, rate),
+      availability = COALESCE($15, availability),
+      weekly_hours = COALESCE($16, weekly_hours)
+    WHERE id=$17 OR user_id=$17
     RETURNING *
   `;
   const params = [
@@ -535,6 +538,8 @@ async function updateProviderProfile(provider_id, fields){
     typeof paused === 'boolean' ? paused : null,
     bio || null,
     rate || null,
+    availability ? (typeof availability === 'string' ? availability : JSON.stringify(availability)) : null,
+    weekly_hours !== undefined && weekly_hours !== null ? Number(weekly_hours) : null,
     provider_id
   ];
   const result = await pool.query(sql, params);

@@ -327,7 +327,7 @@ router.post('/messages/read', async (req, res) => {
 // Create childcare request
 router.post('/request', async (req, res) => {
   const { user_id, child_id, location, notes, childName, start_at, end_at, rate, provider_id } = req.body;
-  console.log('Childcare request received:', { user_id, child_id, location, childName, start_at, end_at });
+  console.log('Childcare request received:', { user_id, child_id, location, childName, start_at, end_at, provider_id });
   
   if(!user_id || !location){
     return res.status(400).json({ error: 'user_id and location are required' });
@@ -344,6 +344,13 @@ router.post('/request', async (req, res) => {
     }
     
     let finalChildId = child_id ? parseInt(child_id) : null;
+    let finalProviderId = provider_id ? parseInt(provider_id) : null;
+
+    // If provider_id was sent as user_id, resolve to providers.id
+    if(finalProviderId){
+      const resolved = await getProviderIdForUser(finalProviderId);
+      if(resolved) finalProviderId = resolved;
+    }
     
     // If a new child name is provided and no child_id, create the child first
     if(childName && !finalChildId){
@@ -357,7 +364,7 @@ router.post('/request', async (req, res) => {
       console.log('All children for user after creation:', verifyChildren);
     }
     
-    const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes, start_at, end_at, rate, provider_id });
+    const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes, start_at, end_at, rate, provider_id: finalProviderId });
     console.log('Created childcare request ID:', id);
     return res.json({ success: true, id });
   }catch(err){
