@@ -216,7 +216,8 @@ router.get('/provider/:provider_id', async (req, res) => {
     }
     const sessions = await getProviderSessions(providerId);
     const stats = await getProviderStats(providerId);
-    return res.json({ profile, sessions, stats, requests: [], messages: [], reviews: [] });
+    const requests = await getProviderRequests(providerId);
+    return res.json({ profile, sessions, stats, requests, messages: [], reviews: [] });
   }catch(err){
     console.error('Provider dashboard fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch provider dashboard' });
@@ -253,8 +254,8 @@ router.post('/referral', async (req, res) => {
 
 // Create childcare request
 router.post('/request', async (req, res) => {
-  const { user_id, child_id, location, notes, childName } = req.body;
-  console.log('Childcare request received:', { user_id, child_id, location, childName });
+  const { user_id, child_id, location, notes, childName, start_at, end_at, rate, provider_id } = req.body;
+  console.log('Childcare request received:', { user_id, child_id, location, childName, start_at, end_at });
   
   if(!user_id || !location){
     return res.status(400).json({ error: 'user_id and location are required' });
@@ -284,7 +285,7 @@ router.post('/request', async (req, res) => {
       console.log('All children for user after creation:', verifyChildren);
     }
     
-    const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes });
+    const id = await insertChildcareRequest({ user_id, child_id: finalChildId, location, notes, start_at, end_at, rate, provider_id });
     console.log('Created childcare request ID:', id);
     return res.json({ success: true, id });
   }catch(err){
@@ -308,6 +309,36 @@ router.post('/request/:id/cancel', async (req, res) => {
   }catch(err){
     console.error('Failed to cancel request:', err);
     return res.status(500).json({ error: 'Failed to cancel request' });
+  }
+});
+
+// Respond to a childcare request (caregiver)
+router.post('/request/:id/respond', async (req, res) => {
+  const requestId = parseInt(req.params.id);
+  const { action, provider_id } = req.body || {};
+  if(!requestId || isNaN(requestId)) return res.status(400).json({ error: 'Invalid request ID' });
+  if(!action || !['accept','decline','more_info'].includes(action)) return res.status(400).json({ error: 'Invalid action' });
+  try{
+    const { rows } = await pool.query('SELECT * FROM childcare_requests WHERE id=$1', [requestId]);
+    const reqRow = rows[0];
+    if(!reqRow) return res.status(404).json({ error: 'Request not found' });
+    const finalProviderId = provider_id || reqRow.provider_id;
+    if(action === 'accept'){
+      await pool.query('UPDATE childcare_requests SET status=$1, provider_id=$2 WHERE id=$3', ['accepted', finalProviderId, requestId]);
+      if(finalProviderId){
+        await createSessionFromRequest({ parent_id: reqRow.parent_id, provider_id: finalProviderId, request: reqRow });
+      }
+      return res.json({ success:true, status:'accepted' });
+    } else if(action === 'decline'){
+      await pool.query('UPDATE childcare_requests SET status=$1 WHERE id=$2', ['declined', requestId]);
+      return res.json({ success:true, status:'declined' });
+    } else {
+      await pool.query('UPDATE childcare_requests SET status=$1 WHERE id=$2', ['needs_info', requestId]);
+      return res.json({ success:true, status:'needs_info' });
+    }
+  }catch(err){
+    console.error('Request respond failed:', err);
+    return res.status(500).json({ error: 'Failed to update request' });
   }
 });
 

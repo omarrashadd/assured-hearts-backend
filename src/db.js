@@ -75,7 +75,11 @@ async function init(){
       id SERIAL PRIMARY KEY,
       parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       child_id INTEGER REFERENCES children(id) ON DELETE SET NULL,
+      provider_id INTEGER REFERENCES providers(id) ON DELETE SET NULL,
       location TEXT NOT NULL,
+      start_at TIMESTAMP WITH TIME ZONE,
+      end_at TIMESTAMP WITH TIME ZONE,
+      rate TEXT,
       notes TEXT,
       status TEXT DEFAULT 'pending',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -121,6 +125,10 @@ async function init(){
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS paused BOOLEAN DEFAULT false`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS bio TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS rate TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS provider_id INTEGER REFERENCES providers(id) ON DELETE SET NULL`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS rate TEXT`);
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
@@ -286,12 +294,11 @@ async function getOrCreateChild(user_id, childName){
   return null;
 }
 
-async function insertChildcareRequest({ user_id, child_id, location, notes }){
+async function insertChildcareRequest({ user_id, child_id, location, notes, provider_id=null, start_at=null, end_at=null, rate=null }){
   if(!pool) return;
-  console.log('[DB] Inserting childcare request:', { user_id, child_id, location });
-  const sql = 'INSERT INTO childcare_requests(parent_id, child_id, location, notes, status) VALUES($1, $2, $3, $4, $5) RETURNING id';
-  console.log('[DB] SQL:', sql, 'Params:', [user_id, child_id || null, location, notes || null, 'pending']);
-  const result = await pool.query(sql, [user_id, child_id || null, location, notes || null, 'pending']);
+  console.log('[DB] Inserting childcare request:', { user_id, child_id, location, provider_id, start_at, end_at });
+  const sql = 'INSERT INTO childcare_requests(parent_id, child_id, provider_id, location, notes, status, start_at, end_at, rate) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id';
+  const result = await pool.query(sql, [user_id, child_id || null, provider_id || null, location, notes || null, 'pending', start_at || null, end_at || null, rate || null]);
   console.log('[DB] Request inserted with ID:', result.rows[0]?.id);
   return result.rows[0]?.id;
 }
@@ -300,6 +307,7 @@ async function getParentRequests(user_id){
   if(!pool) return [];
   const sql = `
     SELECT cr.id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
+           cr.start_at, cr.end_at, cr.rate, cr.provider_id,
            CONCAT_WS(' ', c.first_name, c.last_name) as child_name
     FROM childcare_requests cr
     LEFT JOIN children c ON cr.child_id = c.id
@@ -308,6 +316,39 @@ async function getParentRequests(user_id){
   `;
   const result = await pool.query(sql, [user_id]);
   return result.rows || [];
+}
+
+async function getProviderRequests(provider_id){
+  if(!pool) return [];
+  const sql = `
+    SELECT cr.id, cr.parent_id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
+           cr.start_at, cr.end_at, cr.rate, cr.provider_id,
+           u.name as parent_name
+    FROM childcare_requests cr
+    LEFT JOIN users u ON cr.parent_id = u.id
+    WHERE cr.provider_id IS NULL OR cr.provider_id = $1
+    ORDER BY cr.created_at DESC
+  `;
+  const result = await pool.query(sql, [provider_id]);
+  return result.rows || [];
+}
+
+async function createSessionFromRequest({ parent_id, provider_id, request }){
+  if(!pool) return null;
+  const startBase = request?.start_at || request?.created_at;
+  if(!startBase) return null;
+  const start = new Date(startBase);
+  const end = request.end_at ? new Date(request.end_at) : null;
+  const session_date = start.toISOString().slice(0,10);
+  const start_time = start.toTimeString().slice(0,8);
+  const end_time = end ? end.toTimeString().slice(0,8) : null;
+  const sql = `
+    INSERT INTO sessions(parent_id, provider_id, session_date, start_time, end_time, status)
+    VALUES($1,$2,$3,$4,$5,'confirmed')
+    RETURNING id
+  `;
+  const result = await pool.query(sql, [parent_id, provider_id, session_date, start_time, end_time]);
+  return result.rows[0]?.id || null;
 }
 
 async function getParentSessions(user_id){
@@ -517,4 +558,4 @@ async function approveApplication(applicationId){
   return providerId;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile, getProviderRequests, createSessionFromRequest };
