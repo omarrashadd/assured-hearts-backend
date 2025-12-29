@@ -224,6 +224,17 @@ router.get('/provider/:provider_id', async (req, res) => {
   }
 });
 
+// Public list of providers (basic info)
+router.get('/providers', async (_req, res) => {
+  try{
+    const providers = await require('../db').listProviders();
+    return res.json({ providers });
+  }catch(err){
+    console.error('List providers failed:', err);
+    return res.status(500).json({ error: 'Failed to list providers' });
+  }
+});
+
 // Update provider profile
 router.put('/provider/:provider_id', async (req, res) => {
   const providerId = parseInt(req.params.provider_id);
