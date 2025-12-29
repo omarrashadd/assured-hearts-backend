@@ -316,6 +316,7 @@ async function getParentRequests(user_id){
   const sql = `
     SELECT cr.id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
            cr.start_at, cr.end_at, cr.rate, cr.provider_id,
+           p.user_id as provider_user_id,
            CONCAT_WS(' ', c.first_name, c.last_name) as child_name
            , p.name as provider_name
     FROM childcare_requests cr
@@ -365,7 +366,7 @@ async function getParentSessions(user_id){
   if(!pool) return [];
   const sql = `
     SELECT s.id, s.session_date, s.start_time, s.end_time, s.status, 
-           p.id as provider_id, p.name as provider_name, p.city as provider_city
+           p.id as provider_id, p.user_id as provider_user_id, p.name as provider_name, p.city as provider_city
     FROM sessions s
     LEFT JOIN providers p ON s.provider_id = p.id
     WHERE s.parent_id=$1 AND s.session_date >= CURRENT_DATE
