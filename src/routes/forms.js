@@ -223,6 +223,20 @@ router.get('/provider/:provider_id', async (req, res) => {
   }
 });
 
+// Update provider profile
+router.put('/provider/:provider_id', async (req, res) => {
+  const providerId = parseInt(req.params.provider_id);
+  if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
+  try{
+    const updated = await updateProviderProfile(providerId, req.body || {});
+    if(!updated) return res.status(404).json({ error: 'Provider not found' });
+    return res.json({ profile: updated });
+  }catch(err){
+    console.error('Provider profile update failed:', err);
+    return res.status(500).json({ error: 'Failed to update provider profile' });
+  }
+});
+
 // Record a referral for a parent
 router.post('/referral', async (req, res) => {
   const userId = parseInt(req.body.user_id);

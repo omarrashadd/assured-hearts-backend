@@ -111,6 +111,16 @@ async function init(){
     }
     await pool.query(createWaitlist);
     await pool.query(createProviders);
+    // Provider profile enrichment
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS address_line1 TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS address_line2 TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS postal_code TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS payout_method TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS payout_details TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS two_factor_enabled BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS paused BOOLEAN DEFAULT false`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS bio TEXT`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS rate TEXT`);
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
     console.log('[DB] Tables ensured');
@@ -317,7 +327,10 @@ async function getParentSessions(user_id){
 async function getProviderProfile(provider_id){
   if(!pool) return null;
   const sql = `
-    SELECT pr.id, pr.user_id, pr.name, pr.email, pr.phone, pr.city, pr.province
+    SELECT pr.id, pr.user_id, pr.name, pr.email, pr.phone, pr.city, pr.province,
+           pr.address_line1, pr.address_line2, pr.postal_code,
+           pr.payout_method, pr.payout_details, pr.two_factor_enabled, pr.paused,
+           pr.bio, pr.rate
     FROM providers pr
     WHERE pr.id = $1 OR pr.user_id = $1
   `;
@@ -370,6 +383,54 @@ async function getProviderStats(provider_id){
     console.error('[DB] getProviderStats failed:', err.message);
   }
   return stats;
+}
+
+async function updateProviderProfile(provider_id, fields){
+  if(!pool) return null;
+  const {
+    name, phone, email, city, province,
+    address_line1, address_line2, postal_code,
+    payout_method, payout_details,
+    two_factor_enabled, paused, bio, rate
+  } = fields;
+  const sql = `
+    UPDATE providers SET
+      name = COALESCE($1, name),
+      phone = COALESCE($2, phone),
+      email = COALESCE($3, email),
+      city = COALESCE($4, city),
+      province = COALESCE($5, province),
+      address_line1 = COALESCE($6, address_line1),
+      address_line2 = COALESCE($7, address_line2),
+      postal_code = COALESCE($8, postal_code),
+      payout_method = COALESCE($9, payout_method),
+      payout_details = COALESCE($10, payout_details),
+      two_factor_enabled = COALESCE($11, two_factor_enabled),
+      paused = COALESCE($12, paused),
+      bio = COALESCE($13, bio),
+      rate = COALESCE($14, rate)
+    WHERE id=$15 OR user_id=$15
+    RETURNING *
+  `;
+  const params = [
+    name || null,
+    phone || null,
+    email || null,
+    city || null,
+    province || null,
+    address_line1 || null,
+    address_line2 || null,
+    postal_code || null,
+    payout_method || null,
+    payout_details || null,
+    typeof two_factor_enabled === 'boolean' ? two_factor_enabled : null,
+    typeof paused === 'boolean' ? paused : null,
+    bio || null,
+    rate || null,
+    provider_id
+  ];
+  const result = await pool.query(sql, params);
+  return result.rows[0] || null;
 }
 
 async function getPendingApplications(){
@@ -456,4 +517,4 @@ async function approveApplication(applicationId){
   return providerId;
 }
 
-module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats };
+module.exports = { pool, init, createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, countProvidersByCity, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, getProviderProfile, getProviderSessions, getProviderStats, updateProviderProfile };
