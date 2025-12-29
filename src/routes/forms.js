@@ -218,7 +218,23 @@ router.get('/provider/:provider_id', async (req, res) => {
     const sessions = await getProviderSessions(resolvedId);
     const stats = await getProviderStats(resolvedId);
     const requests = await getProviderRequests(resolvedId);
-    return res.json({ profile, sessions, stats, requests, messages: [], reviews: [] });
+    // Fallback: treat accepted requests as pseudo-sessions for UI messaging
+    const pseudoSessions = (requests || []).filter(r => (r.status||'').toLowerCase() === 'accepted').map(r => {
+      const startDate = r.start_at ? new Date(r.start_at) : null;
+      const endDate = r.end_at ? new Date(r.end_at) : null;
+      return {
+        id: `req-${r.id}`,
+        parent_id: r.parent_id,
+        parent_name: r.parent_name || 'Family',
+        parent_city: r.location || '',
+        session_date: startDate ? startDate.toISOString().slice(0,10) : null,
+        start_time: startDate ? startDate.toTimeString().slice(0,8) : '',
+        end_time: endDate ? endDate.toTimeString().slice(0,8) : '',
+        status: r.status || 'accepted'
+      };
+    });
+    const combinedSessions = [...sessions, ...pseudoSessions];
+    return res.json({ profile, sessions: combinedSessions, stats, requests, messages: [], reviews: [] });
   }catch(err){
     console.error('Provider dashboard fetch failed:', err);
     return res.status(500).json({ error: 'Failed to fetch provider dashboard' });
