@@ -22,6 +22,7 @@ async function init(){
       type TEXT NOT NULL DEFAULT 'parent',
       city TEXT,
       province TEXT,
+      stripe_customer_id TEXT,
       referrals_count INTEGER DEFAULT 0,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
@@ -80,9 +81,40 @@ async function init(){
       start_at TIMESTAMP WITH TIME ZONE,
       end_at TIMESTAMP WITH TIME ZONE,
       rate TEXT,
+      care_type TEXT,
+      is_premium BOOLEAN,
+      child_age INTEGER,
+      pricing_province TEXT,
+      pricing_snapshot JSONB,
+      hourly_rate_cents INTEGER,
       notes TEXT,
+      payment_intent_id TEXT,
+      payment_status TEXT,
+      payment_amount_cents INTEGER,
+      payment_currency TEXT,
+      payment_setup_intent_id TEXT,
+      payment_method_id TEXT,
       status TEXT DEFAULT 'pending',
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
+  const createPaymentMethods = `
+    CREATE TABLE IF NOT EXISTS payment_methods (
+      id SERIAL PRIMARY KEY,
+      parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      stripe_payment_method_id TEXT NOT NULL,
+      label TEXT,
+      brand TEXT,
+      last4 TEXT,
+      exp_month INTEGER,
+      exp_year INTEGER,
+      is_default BOOLEAN DEFAULT false,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );`;
+  const createPricingConfig = `
+    CREATE TABLE IF NOT EXISTS pricing_config (
+      id INTEGER PRIMARY KEY,
+      config JSONB NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
     );`;
   const createSessions = `
     CREATE TABLE IF NOT EXISTS sessions (
@@ -100,6 +132,7 @@ async function init(){
     await pool.query(createProviderApps);
     await pool.query(createChildren);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrals_count INTEGER DEFAULT 0`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
     // Ensure new child columns exist for legacy tables
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS first_name TEXT`);
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_name TEXT`);
@@ -130,6 +163,18 @@ async function init(){
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS rate TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS care_type TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS is_premium BOOLEAN`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS child_age INTEGER`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS pricing_province TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS pricing_snapshot JSONB`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS hourly_rate_cents INTEGER`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_intent_id TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_status TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_amount_cents INTEGER`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_currency TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_setup_intent_id TEXT`);
+    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_method_id TEXT`);
     await pool.query(`CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
       sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -143,6 +188,8 @@ async function init(){
     )`);
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
+    await pool.query(createPaymentMethods);
+    await pool.query(createPricingConfig);
     console.log('[DB] Tables ensured');
     
   }catch(err){
@@ -306,11 +353,38 @@ async function getOrCreateChild(user_id, childName){
   return null;
 }
 
-async function insertChildcareRequest({ user_id, child_id, location, notes, provider_id=null, start_at=null, end_at=null, rate=null }){
+async function insertChildcareRequest({ user_id, child_id, location, notes, provider_id=null, start_at=null, end_at=null, rate=null, care_type=null, is_premium=null, child_age=null, pricing_province=null, pricing_snapshot=null, hourly_rate_cents=null, payment_amount_cents=null, payment_method_id=null, payment_status=null }){
   if(!pool) return;
-  console.log('[DB] Inserting childcare request:', { user_id, child_id, location, provider_id, start_at, end_at });
-  const sql = 'INSERT INTO childcare_requests(parent_id, child_id, provider_id, location, notes, status, start_at, end_at, rate) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id';
-  const result = await pool.query(sql, [user_id, child_id || null, provider_id || null, location, notes || null, 'pending', start_at || null, end_at || null, rate || null]);
+  console.log('[DB] Inserting childcare request:', { user_id, child_id, location, provider_id, start_at, end_at, care_type, is_premium });
+  const sql = `INSERT INTO childcare_requests(
+      parent_id, child_id, provider_id, location, notes, status, start_at, end_at,
+      rate, care_type, is_premium, child_age, pricing_province, pricing_snapshot,
+      hourly_rate_cents, payment_amount_cents, payment_method_id, payment_status
+    ) VALUES(
+      $1, $2, $3, $4, $5, $6, $7, $8,
+      $9, $10, $11, $12, $13, $14,
+      $15, $16, $17, $18
+    ) RETURNING id`;
+  const result = await pool.query(sql, [
+    user_id,
+    child_id || null,
+    provider_id || null,
+    location,
+    notes || null,
+    'pending',
+    start_at || null,
+    end_at || null,
+    rate || null,
+    care_type || null,
+    is_premium === null || is_premium === undefined ? null : !!is_premium,
+    child_age !== null && child_age !== undefined ? Number(child_age) : null,
+    pricing_province || null,
+    pricing_snapshot || null,
+    hourly_rate_cents !== null && hourly_rate_cents !== undefined ? Number(hourly_rate_cents) : null,
+    payment_amount_cents !== null && payment_amount_cents !== undefined ? Number(payment_amount_cents) : null,
+    payment_method_id || null,
+    payment_status || null
+  ]);
   console.log('[DB] Request inserted with ID:', result.rows[0]?.id);
   return result.rows[0]?.id;
 }
@@ -320,6 +394,9 @@ async function getParentRequests(user_id){
   const sql = `
     SELECT cr.id, cr.child_id, cr.location, cr.status, cr.notes, cr.created_at,
            cr.start_at, cr.end_at, cr.rate, cr.provider_id,
+           cr.care_type, cr.is_premium, cr.child_age, cr.pricing_province, cr.pricing_snapshot, cr.hourly_rate_cents,
+           cr.payment_intent_id, cr.payment_status, cr.payment_amount_cents, cr.payment_currency,
+           cr.payment_setup_intent_id, cr.payment_method_id,
            p.user_id as provider_user_id,
            CONCAT_WS(' ', c.first_name, c.last_name) as child_name
            , p.name as provider_name
