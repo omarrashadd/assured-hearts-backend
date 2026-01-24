@@ -53,7 +53,7 @@ app.get('/forms/recent', async (req, res) => {
   try{
     if(!pool) return res.json({ parents: [], providers: [] });
     const parents = await pool.query('SELECT id, name, email, phone, city, province, created_at FROM users WHERE type=\'parent\' ORDER BY created_at DESC LIMIT 5');
-    const providers = await pool.query('SELECT u.id, u.name, u.email, u.phone, u.city, u.province, p.experience, p.age_groups, u.created_at FROM users u LEFT JOIN provider_applications p ON u.id=p.user_id WHERE u.type=\'provider\' ORDER BY u.created_at DESC LIMIT 5');
+    const providers = await pool.query('SELECT u.id, u.name, u.email, u.phone, u.city, u.province, p.age_groups, u.created_at FROM users u LEFT JOIN provider_applications p ON u.id=p.user_id WHERE u.type=\'provider\' ORDER BY u.created_at DESC LIMIT 5');
     return res.json({ parents: parents.rows, providers: providers.rows });
   }catch(err){
     console.error('Recent error:', err);

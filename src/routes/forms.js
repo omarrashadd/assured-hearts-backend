@@ -49,32 +49,49 @@ router.post('/provider', async (req, res) => {
     return res.status(400).json({ error: 'Missing required provider fields' });
   }
 
-  const { name, email, phone, password, experience, age_groups, certifications, meta } = req.body;
+  const { name, email, phone, password, age_groups, certifications, meta } = req.body;
+  const first_name = req.body.first_name || req.body.firstName || meta?.first_name || null;
+  const last_name = req.body.last_name || req.body.lastName || meta?.last_name || null;
+  const computedName = name || [first_name, last_name].filter(Boolean).join(' ') || 'Caregiver';
   
   // Extract city/province from meta (frontend sends them there)
   const city = meta?.city || req.body.city || null;
   const province = meta?.province || req.body.province || null;
-  const payoutMethod = meta?.payout_method || meta?.payoutMethod || null;
   const languages = meta?.languages || req.body.languages || null;
-  const dailyPayoutsMember = meta?.daily_payouts_member ?? meta?.dailyPayoutsMember;
+  const address_line1 = meta?.address_line1 || req.body.address_line1 || null;
+  const address_line2 = meta?.address_line2 || req.body.address_line2 || null;
+  const postal_code = meta?.postal_code || req.body.postal_code || null;
+  const payout_method = meta?.payout_method || req.body.payout_method || null;
+  const consent_background_check = meta?.consent_background_check ?? meta?.consentBackgroundCheck ?? req.body.consent_background_check ?? req.body.consentBackgroundCheck;
+  const consent_terms = meta?.consent_terms ?? meta?.consentTerms ?? req.body.consent_terms ?? req.body.consentTerms;
+  const consent_provider_agreement = meta?.consent_provider_agreement ?? meta?.consentProviderAgreement ?? req.body.consent_provider_agreement ?? req.body.consentProviderAgreement;
   
   console.log('Extracted location:', { city, province });
   
   try{
     // Create user account with city/province
-    const userId = await createProviderUser({ name, email, phone, password, city, province });
+    const userId = await createProviderUser({ name: computedName, email, phone, password, city, province });
     console.log('Provider user created:', userId, 'with location:', city, province);
     
     // Store application details
     await insertProviderApplication({
       user_id: userId,
-      experience,
+      first_name,
+      last_name,
+      phone,
+      city,
+      province,
+      address_line1,
+      address_line2,
+      postal_code,
       availability: meta?.availability,
       age_groups,
       certifications,
       languages,
-      payout_method: payoutMethod,
-      daily_payouts_member: dailyPayoutsMember === true || dailyPayoutsMember === 'true' || dailyPayoutsMember === 1 || dailyPayoutsMember === '1'
+      payout_method,
+      consent_background_check: consent_background_check === true || consent_background_check === 'true' || consent_background_check === 1 || consent_background_check === '1',
+      consent_terms: consent_terms === true || consent_terms === 'true' || consent_terms === 1 || consent_terms === '1',
+      consent_provider_agreement: consent_provider_agreement === true || consent_provider_agreement === 'true' || consent_provider_agreement === 1 || consent_provider_agreement === '1'
     });
     console.log('Provider application created for user:', userId);
     
@@ -335,7 +352,7 @@ router.post('/messages/read', async (req, res) => {
 
 // Create childcare request
 router.post('/request', async (req, res) => {
-  const { user_id, child_id, location, notes, childName, start_at, end_at, rate, provider_id, care_type, is_premium, child_age } = req.body;
+  const { user_id, child_id, location, notes, childName, start_at, end_at, provider_id, care_type, is_premium, child_age } = req.body;
   console.log('Childcare request received:', { user_id, child_id, location, childName, start_at, end_at, provider_id, care_type, is_premium });
   
   if(!user_id || !location){
@@ -405,7 +422,6 @@ router.post('/request', async (req, res) => {
       notes,
       start_at,
       end_at,
-      rate,
       care_type: resolvedCareType,
       is_premium: profileIsPremium,
       child_age: resolvedChildAge,

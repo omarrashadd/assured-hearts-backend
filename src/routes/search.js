@@ -33,7 +33,7 @@ router.get('/list', async (req, res) => {
       return res.json({ caregivers: [] });
     }
     const sql = `
-      SELECT id, name, city, province, experience, certifications
+      SELECT id, name, city, province, certifications
       FROM providers
       WHERE LOWER(city) = LOWER($1)
       ORDER BY approved_at DESC, created_at DESC
