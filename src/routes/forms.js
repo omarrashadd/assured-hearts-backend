@@ -35,6 +35,15 @@ router.post('/parent', async (req, res) => {
   }
 });
 
+function splitFullName(name){
+  if(!name) return { first: null, last: null };
+  const parts = String(name).trim().split(/\s+/);
+  if(parts.length === 1) return { first: parts[0], last: null };
+  const first = parts.shift();
+  const last = parts.join(' ') || null;
+  return { first, last };
+}
+
 router.post('/provider', async (req, res) => {
   console.log('Provider signup received:', { 
     name: req.body.name, 
@@ -50,8 +59,11 @@ router.post('/provider', async (req, res) => {
   }
 
   const { name, email, phone, password, age_groups, certifications, meta } = req.body;
-  const first_name = req.body.first_name || req.body.firstName || meta?.first_name || null;
-  const last_name = req.body.last_name || req.body.lastName || meta?.last_name || null;
+  const first_name_raw = req.body.first_name || req.body.firstName || meta?.first_name || null;
+  const last_name_raw = req.body.last_name || req.body.lastName || meta?.last_name || null;
+  const fallbackSplit = splitFullName(name);
+  const first_name = first_name_raw || fallbackSplit.first;
+  const last_name = last_name_raw || fallbackSplit.last;
   const computedName = name || [first_name, last_name].filter(Boolean).join(' ') || 'Caregiver';
   
   // Extract city/province from meta (frontend sends them there)

@@ -742,6 +742,15 @@ async function approveApplication(applicationId){
   const ageGroupsJson = app.age_groups ? (typeof app.age_groups === 'string' ? app.age_groups : JSON.stringify(app.age_groups)) : null;
   const availabilityJson = app.availability ? (typeof app.availability === 'string' ? app.availability : JSON.stringify(app.availability)) : null;
   const displayName = app.name || [app.first_name, app.last_name].filter(Boolean).join(' ') || 'Caregiver';
+  const splitName = (raw => {
+    if(!raw) return { first: null, last: null };
+    const parts = String(raw).trim().split(/\s+/);
+    if(parts.length === 1) return { first: parts[0], last: null };
+    const first = parts.shift();
+    return { first, last: parts.join(' ') || null };
+  })(displayName);
+  const firstNameFinal = app.first_name || splitName.first;
+  const lastNameFinal = app.last_name || splitName.last;
   
   // Check if provider already exists for this user
   const checkSql = 'SELECT id FROM providers WHERE user_id = $1';
@@ -766,7 +775,7 @@ async function approveApplication(applicationId){
       RETURNING id
     `;
     const result = await pool.query(updateSql, [
-      displayName, app.first_name || null, app.last_name || null,
+      displayName, firstNameFinal || null, lastNameFinal || null,
       app.email, app.phone, app.city, app.province,
       app.address_line1 || null, app.address_line2 || null, app.postal_code || null,
       app.payout_method || null,
@@ -790,7 +799,7 @@ async function approveApplication(applicationId){
       RETURNING id
     `;
     const result = await pool.query(insertSql, [
-      app.user_id, displayName, app.first_name || null, app.last_name || null,
+      app.user_id, displayName, firstNameFinal || null, lastNameFinal || null,
       app.email, app.phone, app.city, app.province,
       app.address_line1 || null, app.address_line2 || null, app.postal_code || null, app.payout_method || null,
       app.certifications, ageGroupsJson, availabilityJson, app.languages || null,
