@@ -22,7 +22,7 @@ async function init(){
       type TEXT NOT NULL DEFAULT 'parent',
       city TEXT,
       province TEXT,
-      stripe_customer_id TEXT,
+      is_premium BOOLEAN DEFAULT false,
       referrals_count INTEGER DEFAULT 0,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
@@ -34,6 +34,8 @@ async function init(){
       availability JSONB,
       age_groups JSONB,
       certifications TEXT,
+      payout_method TEXT,
+      daily_payouts_member BOOLEAN,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
   const createChildren = `
@@ -92,22 +94,7 @@ async function init(){
       payment_status TEXT,
       payment_amount_cents INTEGER,
       payment_currency TEXT,
-      payment_setup_intent_id TEXT,
-      payment_method_id TEXT,
       status TEXT DEFAULT 'pending',
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    );`;
-  const createPaymentMethods = `
-    CREATE TABLE IF NOT EXISTS payment_methods (
-      id SERIAL PRIMARY KEY,
-      parent_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-      stripe_payment_method_id TEXT NOT NULL,
-      label TEXT,
-      brand TEXT,
-      last4 TEXT,
-      exp_month INTEGER,
-      exp_year INTEGER,
-      is_default BOOLEAN DEFAULT false,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
   const createPricingConfig = `
@@ -130,9 +117,11 @@ async function init(){
   try{
     await pool.query(createUsers);
     await pool.query(createProviderApps);
+    await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS payout_method TEXT`);
+    await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS daily_payouts_member BOOLEAN`);
     await pool.query(createChildren);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrals_count INTEGER DEFAULT 0`);
-    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+    await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT false`);
     // Ensure new child columns exist for legacy tables
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS first_name TEXT`);
     await pool.query(`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_name TEXT`);
@@ -173,8 +162,6 @@ async function init(){
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_status TEXT`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_amount_cents INTEGER`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_currency TEXT`);
-    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_setup_intent_id TEXT`);
-    await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS payment_method_id TEXT`);
     await pool.query(`CREATE TABLE IF NOT EXISTS messages (
       id SERIAL PRIMARY KEY,
       sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -188,7 +175,6 @@ async function init(){
     )`);
     await pool.query(createChildcareRequests);
     await pool.query(createSessions);
-    await pool.query(createPaymentMethods);
     await pool.query(createPricingConfig);
     console.log('[DB] Tables ensured');
     
@@ -220,10 +206,18 @@ async function createProviderUser({ name, email, phone, password, city, province
   return result.rows[0]?.id;
 }
 
-async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications }){
+async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications, payout_method, daily_payouts_member }){
   if(!pool) return;
-  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications) VALUES($1,$2,$3,$4,$5) RETURNING id';
-  const params = [user_id, experience || null, availability ? JSON.stringify(availability) : null, age_groups ? JSON.stringify(age_groups) : null, certifications || null];
+  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications,payout_method,daily_payouts_member) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id';
+  const params = [
+    user_id,
+    experience || null,
+    availability ? JSON.stringify(availability) : null,
+    age_groups ? JSON.stringify(age_groups) : null,
+    certifications || null,
+    payout_method || null,
+    daily_payouts_member === true
+  ];
   const result = await pool.query(sql, params);
   console.log('[DB] Provider application created:', result.rows[0]?.id, 'for user:', user_id);
   return result.rows[0]?.id;
@@ -251,7 +245,7 @@ async function insertChildProfile({ user_id, first_name, last_name, age, frequen
 
 async function findUserByEmail(email){
   if(!pool) return null;
-  const sql = 'SELECT id, name, email, phone, password_hash, type, city, province FROM users WHERE email=$1';
+  const sql = 'SELECT id, name, email, phone, password_hash, type, city, province, is_premium FROM users WHERE email=$1';
   const result = await pool.query(sql, [email]);
   return result.rows[0] || null;
 }
@@ -284,7 +278,7 @@ async function getParentChildren(user_id){
 
 async function getParentProfile(user_id){
   if(!pool) return null;
-  const sql = 'SELECT id, name, email, phone, city, province, referrals_count, created_at FROM users WHERE id=$1 AND type=\'parent\'';
+  const sql = 'SELECT id, name, email, phone, city, province, is_premium, referrals_count, created_at FROM users WHERE id=$1 AND type=\'parent\'';
   const result = await pool.query(sql, [user_id]);
   return result.rows[0] || null;
 }
@@ -353,17 +347,17 @@ async function getOrCreateChild(user_id, childName){
   return null;
 }
 
-async function insertChildcareRequest({ user_id, child_id, location, notes, provider_id=null, start_at=null, end_at=null, rate=null, care_type=null, is_premium=null, child_age=null, pricing_province=null, pricing_snapshot=null, hourly_rate_cents=null, payment_amount_cents=null, payment_method_id=null, payment_status=null }){
+async function insertChildcareRequest({ user_id, child_id, location, notes, provider_id=null, start_at=null, end_at=null, rate=null, care_type=null, is_premium=null, child_age=null, pricing_province=null, pricing_snapshot=null, hourly_rate_cents=null, payment_amount_cents=null, payment_status=null }){
   if(!pool) return;
   console.log('[DB] Inserting childcare request:', { user_id, child_id, location, provider_id, start_at, end_at, care_type, is_premium });
   const sql = `INSERT INTO childcare_requests(
       parent_id, child_id, provider_id, location, notes, status, start_at, end_at,
       rate, care_type, is_premium, child_age, pricing_province, pricing_snapshot,
-      hourly_rate_cents, payment_amount_cents, payment_method_id, payment_status
+      hourly_rate_cents, payment_amount_cents, payment_status
     ) VALUES(
       $1, $2, $3, $4, $5, $6, $7, $8,
       $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18
+      $15, $16, $17
     ) RETURNING id`;
   const result = await pool.query(sql, [
     user_id,
@@ -382,7 +376,6 @@ async function insertChildcareRequest({ user_id, child_id, location, notes, prov
     pricing_snapshot || null,
     hourly_rate_cents !== null && hourly_rate_cents !== undefined ? Number(hourly_rate_cents) : null,
     payment_amount_cents !== null && payment_amount_cents !== undefined ? Number(payment_amount_cents) : null,
-    payment_method_id || null,
     payment_status || null
   ]);
   console.log('[DB] Request inserted with ID:', result.rows[0]?.id);
@@ -396,7 +389,6 @@ async function getParentRequests(user_id){
            cr.start_at, cr.end_at, cr.rate, cr.provider_id,
            cr.care_type, cr.is_premium, cr.child_age, cr.pricing_province, cr.pricing_snapshot, cr.hourly_rate_cents,
            cr.payment_intent_id, cr.payment_status, cr.payment_amount_cents, cr.payment_currency,
-           cr.payment_setup_intent_id, cr.payment_method_id,
            p.user_id as provider_user_id,
            CONCAT_WS(' ', c.first_name, c.last_name) as child_name
            , p.name as provider_name
@@ -627,7 +619,7 @@ async function getPendingApplications(){
   if(!pool) return [];
   const sql = `
     SELECT pa.id, pa.user_id, u.name, u.email, u.phone, u.city, u.province,
-           pa.experience, pa.certifications, pa.age_groups, pa.availability, pa.created_at
+           pa.experience, pa.certifications, pa.age_groups, pa.availability, pa.payout_method, pa.daily_payouts_member, pa.created_at
     FROM provider_applications pa
     JOIN users u ON pa.user_id = u.id
     WHERE u.type = 'provider'
@@ -641,7 +633,7 @@ async function getApplicationDetails(applicationId){
   if(!pool) return null;
   const sql = `
     SELECT pa.id, pa.user_id, u.name, u.email, u.phone, u.city, u.province,
-           pa.experience, pa.certifications, pa.age_groups, pa.availability, pa.created_at
+           pa.experience, pa.certifications, pa.age_groups, pa.availability, pa.payout_method, pa.daily_payouts_member, pa.created_at
     FROM provider_applications pa
     JOIN users u ON pa.user_id = u.id
     WHERE pa.id = $1

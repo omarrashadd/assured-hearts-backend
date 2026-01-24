@@ -6,9 +6,6 @@ const { createParentUser, createProviderUser, insertProviderApplication, insertC
 const { calculatePricing, getPricingConfig } = require('../pricing');
 
 const router = express.Router();
-const stripeSecret = process.env.STRIPE_SECRET_KEY;
-const stripe = stripeSecret ? require('stripe')(stripeSecret) : null;
-const DEFAULT_CURRENCY = 'cad';
 
 const REQUIRED_PARENT_FIELDS = ['name', 'email', 'phone', 'password'];
 const REQUIRED_PROVIDER_FIELDS = ['name', 'email', 'phone', 'password'];
@@ -57,6 +54,8 @@ router.post('/provider', async (req, res) => {
   // Extract city/province from meta (frontend sends them there)
   const city = meta?.city || req.body.city || null;
   const province = meta?.province || req.body.province || null;
+  const payoutMethod = meta?.payout_method || meta?.payoutMethod || null;
+  const dailyPayoutsMember = meta?.daily_payouts_member ?? meta?.dailyPayoutsMember;
   
   console.log('Extracted location:', { city, province });
   
@@ -71,7 +70,9 @@ router.post('/provider', async (req, res) => {
       experience,
       availability: meta?.availability,
       age_groups,
-      certifications
+      certifications,
+      payout_method: payoutMethod,
+      daily_payouts_member: dailyPayoutsMember === true || dailyPayoutsMember === 'true' || dailyPayoutsMember === 1 || dailyPayoutsMember === '1'
     });
     console.log('Provider application created for user:', userId);
     
@@ -330,8 +331,8 @@ router.post('/messages/read', async (req, res) => {
 
 // Create childcare request
 router.post('/request', async (req, res) => {
-  const { user_id, child_id, location, notes, childName, start_at, end_at, rate, provider_id, payment_method_id, care_type, is_premium, child_age } = req.body;
-  console.log('Childcare request received:', { user_id, child_id, location, childName, start_at, end_at, provider_id, payment_method_id, care_type, is_premium });
+  const { user_id, child_id, location, notes, childName, start_at, end_at, rate, provider_id, care_type, is_premium, child_age } = req.body;
+  console.log('Childcare request received:', { user_id, child_id, location, childName, start_at, end_at, provider_id, care_type, is_premium });
   
   if(!user_id || !location){
     return res.status(400).json({ error: 'user_id and location are required' });
@@ -348,7 +349,6 @@ router.post('/request', async (req, res) => {
     
     let finalChildId = child_id ? parseInt(child_id) : null;
     let finalProviderId = provider_id ? parseInt(provider_id) : null;
-    let finalPaymentMethodId = null;
     let resolvedChildAge = null;
 
     // If provider_id was sent as user_id, resolve to providers.id
@@ -382,48 +382,14 @@ router.post('/request', async (req, res) => {
       }
     }
     
-    if(payment_method_id){
-      const raw = String(payment_method_id);
-      if(raw.startsWith('pm_')){
-        const { rows } = await pool.query(
-          'SELECT stripe_payment_method_id FROM payment_methods WHERE parent_id=$1 AND stripe_payment_method_id=$2',
-          [user_id, raw]
-        );
-        if(rows.length === 0){
-          return res.status(400).json({ error: 'Invalid payment method' });
-        }
-        finalPaymentMethodId = raw;
-      } else {
-        const methodId = parseInt(raw, 10);
-        if(Number.isFinite(methodId)){
-          const { rows } = await pool.query(
-            'SELECT stripe_payment_method_id FROM payment_methods WHERE parent_id=$1 AND id=$2',
-            [user_id, methodId]
-          );
-          if(rows.length === 0){
-            return res.status(400).json({ error: 'Invalid payment method' });
-          }
-          finalPaymentMethodId = rows[0].stripe_payment_method_id;
-        }
-      }
-    }
-
-    if(!finalPaymentMethodId){
-      const { rows } = await pool.query(
-        'SELECT stripe_payment_method_id FROM payment_methods WHERE parent_id=$1 AND is_default=true ORDER BY created_at DESC LIMIT 1',
-        [user_id]
-      );
-      if(rows[0]?.stripe_payment_method_id){
-        finalPaymentMethodId = rows[0].stripe_payment_method_id;
-      }
-    }
-
-    const paymentStatus = finalPaymentMethodId ? 'payment_method_saved' : 'needs_payment_method';
+    const profileIsPremium = !!userExists?.is_premium;
+    const resolvedCareType = profileIsPremium ? 'curriculum' : 'basic';
+    const paymentStatus = 'unpaid';
     const pricingConfig = await getPricingConfig();
     const pricing = calculatePricing({
       age: resolvedChildAge,
-      care_type,
-      is_premium: is_premium === true || is_premium === 'true' || is_premium === 1 || is_premium === '1',
+      care_type: resolvedCareType,
+      is_premium: profileIsPremium,
       start_at,
       end_at,
       province: userExists?.province || null
@@ -436,15 +402,14 @@ router.post('/request', async (req, res) => {
       start_at,
       end_at,
       rate,
-      care_type,
-      is_premium: is_premium === true || is_premium === 'true' || is_premium === 1 || is_premium === '1',
+      care_type: resolvedCareType,
+      is_premium: profileIsPremium,
       child_age: resolvedChildAge,
       pricing_province: userExists?.province || null,
       pricing_snapshot: pricing,
       hourly_rate_cents: pricing.total_hourly_cents,
       payment_amount_cents: pricing.total_booking_cents,
       provider_id: finalProviderId,
-      payment_method_id: finalPaymentMethodId,
       payment_status: paymentStatus
     });
     console.log('Created childcare request ID:', id);
@@ -502,92 +467,10 @@ router.post('/request/:id/respond', async (req, res) => {
           console.warn('Create session failed:', err.message);
         }
       }
-      let payment = null;
-      if(stripe){
-        try{
-          let requestPaymentMethodId = reqRow.payment_method_id;
-          if(!requestPaymentMethodId){
-            const { rows: defaultRows } = await pool.query(
-              'SELECT stripe_payment_method_id FROM payment_methods WHERE parent_id=$1 AND is_default=true ORDER BY created_at DESC LIMIT 1',
-              [reqRow.parent_id]
-            );
-            if(defaultRows[0]?.stripe_payment_method_id){
-              requestPaymentMethodId = defaultRows[0].stripe_payment_method_id;
-              await pool.query('UPDATE childcare_requests SET payment_method_id=$1 WHERE id=$2', [requestPaymentMethodId, requestId]);
-            }
-          }
-
-          if(!requestPaymentMethodId){
-            await pool.query('UPDATE childcare_requests SET payment_status=$1 WHERE id=$2', ['needs_payment_method', requestId]);
-            payment = { status: 'needs_payment_method' };
-          } else if(reqRow.payment_status === 'paid'){
-            payment = { status: 'paid', amount_cents: reqRow.payment_amount_cents, currency: reqRow.payment_currency || DEFAULT_CURRENCY };
-          } else {
-            const pricingConfig = await getPricingConfig();
-            const pricing = calculatePricing({
-              age: reqRow.child_age,
-              care_type: reqRow.care_type,
-              is_premium: reqRow.is_premium,
-              start_at: reqRow.start_at,
-              end_at: reqRow.end_at,
-              province: reqRow.pricing_province
-            }, pricingConfig);
-            const amountCents = pricing.total_booking_cents;
-            await pool.query(
-              'UPDATE childcare_requests SET payment_amount_cents=$1, hourly_rate_cents=$2, pricing_snapshot=$3 WHERE id=$4',
-              [amountCents, pricing.total_hourly_cents, pricing, requestId]
-            );
-            let customerId = null;
-            try{
-              const { rows: userRows } = await pool.query('SELECT stripe_customer_id FROM users WHERE id=$1', [reqRow.parent_id]);
-              customerId = userRows[0]?.stripe_customer_id || null;
-              if(!customerId){
-                const customer = await stripe.customers.create({ metadata: { parentId: String(reqRow.parent_id || '') } });
-                customerId = customer.id;
-                await pool.query('UPDATE users SET stripe_customer_id=$1 WHERE id=$2', [customerId, reqRow.parent_id]);
-              }
-            }catch(err){
-              console.warn('Stripe customer lookup failed:', err.message);
-            }
-            try{
-              const intent = await stripe.paymentIntents.create({
-                amount: amountCents,
-                currency: DEFAULT_CURRENCY,
-                customer: customerId || undefined,
-                payment_method: requestPaymentMethodId,
-                confirm: true,
-                off_session: true,
-                metadata: {
-                  requestId: String(requestId),
-                  parentId: String(reqRow.parent_id || ''),
-                  providerId: String(finalProviderId || '')
-                }
-              });
-              await pool.query(
-                'UPDATE childcare_requests SET payment_intent_id=$1, payment_status=$2, payment_amount_cents=$3, payment_currency=$4, status=$5 WHERE id=$6',
-                [intent.id, 'paid', amountCents, DEFAULT_CURRENCY, 'confirmed', requestId]
-              );
-              payment = { status: 'paid', amount_cents: amountCents, currency: DEFAULT_CURRENCY };
-            }catch(err){
-              const intent = err?.payment_intent;
-              if(intent){
-                const nextStatus = intent.status === 'requires_action' ? 'requires_action' : intent.status || 'failed';
-                await pool.query(
-                  'UPDATE childcare_requests SET payment_intent_id=$1, payment_status=$2, payment_amount_cents=$3, payment_currency=$4 WHERE id=$5',
-                  [intent.id, nextStatus, intent.amount || amountCents, intent.currency || DEFAULT_CURRENCY, requestId]
-                );
-                payment = { status: nextStatus, amount_cents: intent.amount || amountCents, currency: intent.currency || DEFAULT_CURRENCY };
-              } else {
-                await pool.query('UPDATE childcare_requests SET payment_status=$1 WHERE id=$2', ['failed', requestId]);
-                payment = { status: 'failed' };
-              }
-            }
-          }
-        }catch(err){
-          console.error('Payment intent creation failed:', err.message);
-        }
+      if((reqRow.payment_status || '').toLowerCase() !== 'paid'){
+        await pool.query('UPDATE childcare_requests SET payment_status=$1 WHERE id=$2', ['awaiting_payment', requestId]);
       }
-      return res.json({ success:true, status:'accepted', payment });
+      return res.json({ success:true, status:'accepted' });
     } else if(action === 'decline'){
       await pool.query('UPDATE childcare_requests SET status=$1 WHERE id=$2', ['declined', requestId]);
       return res.json({ success:true, status:'declined' });
