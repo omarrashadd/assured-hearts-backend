@@ -55,6 +55,7 @@ router.post('/provider', async (req, res) => {
   const city = meta?.city || req.body.city || null;
   const province = meta?.province || req.body.province || null;
   const payoutMethod = meta?.payout_method || meta?.payoutMethod || null;
+  const languages = meta?.languages || req.body.languages || null;
   const dailyPayoutsMember = meta?.daily_payouts_member ?? meta?.dailyPayoutsMember;
   
   console.log('Extracted location:', { city, province });
@@ -71,6 +72,7 @@ router.post('/provider', async (req, res) => {
       availability: meta?.availability,
       age_groups,
       certifications,
+      languages,
       payout_method: payoutMethod,
       daily_payouts_member: dailyPayoutsMember === true || dailyPayoutsMember === 'true' || dailyPayoutsMember === 1 || dailyPayoutsMember === '1'
     });

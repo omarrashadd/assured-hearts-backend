@@ -34,6 +34,7 @@ async function init(){
       availability JSONB,
       age_groups JSONB,
       certifications TEXT,
+      languages TEXT,
       payout_method TEXT,
       daily_payouts_member BOOLEAN,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -70,6 +71,7 @@ async function init(){
       certifications TEXT,
       age_groups JSONB,
       availability JSONB,
+      languages TEXT,
       approved_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );`;
@@ -119,6 +121,7 @@ async function init(){
     await pool.query(createProviderApps);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS payout_method TEXT`);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS daily_payouts_member BOOLEAN`);
+    await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS languages TEXT`);
     await pool.query(createChildren);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS referrals_count INTEGER DEFAULT 0`);
     await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_premium BOOLEAN DEFAULT false`);
@@ -148,6 +151,7 @@ async function init(){
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS bio TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS rate TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS weekly_hours INTEGER`);
+    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS languages TEXT`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS provider_id INTEGER REFERENCES providers(id) ON DELETE SET NULL`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS start_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE childcare_requests ADD COLUMN IF NOT EXISTS end_at TIMESTAMPTZ`);
@@ -206,15 +210,16 @@ async function createProviderUser({ name, email, phone, password, city, province
   return result.rows[0]?.id;
 }
 
-async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications, payout_method, daily_payouts_member }){
+async function insertProviderApplication({ user_id, experience, availability, age_groups, certifications, languages, payout_method, daily_payouts_member }){
   if(!pool) return;
-  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications,payout_method,daily_payouts_member) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id';
+  const sql = 'INSERT INTO provider_applications(user_id,experience,availability,age_groups,certifications,languages,payout_method,daily_payouts_member) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id';
   const params = [
     user_id,
     experience || null,
     availability ? JSON.stringify(availability) : null,
     age_groups ? JSON.stringify(age_groups) : null,
     certifications || null,
+    languages || null,
     payout_method || null,
     daily_payouts_member === true
   ];
@@ -489,7 +494,7 @@ async function getProviderProfile(provider_id){
     SELECT pr.id, pr.user_id, pr.name, pr.email, pr.phone, pr.city, pr.province,
            pr.address_line1, pr.address_line2, pr.postal_code,
            pr.payout_method, pr.payout_details, pr.two_factor_enabled, pr.paused,
-           pr.bio, pr.rate, pr.availability, pr.weekly_hours
+           pr.bio, pr.rate, pr.availability, pr.weekly_hours, pr.languages
     FROM providers pr
     WHERE pr.id = $1 OR pr.user_id = $1
   `;
@@ -518,7 +523,7 @@ async function listProviders({ city = null, province = null } = {}){
   }
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `
-    SELECT pr.id, pr.user_id, pr.name, pr.city, pr.province, pr.bio, pr.rate, pr.availability, pr.weekly_hours
+    SELECT pr.id, pr.user_id, pr.name, pr.city, pr.province, pr.bio, pr.rate, pr.availability, pr.weekly_hours, pr.languages
     FROM providers pr
     ${whereClause}
     ORDER BY pr.created_at DESC
@@ -581,7 +586,7 @@ async function updateProviderProfile(provider_id, fields){
     name, phone, email, city, province,
     address_line1, address_line2, postal_code,
     payout_method, payout_details,
-    two_factor_enabled, paused, bio, rate, availability, weekly_hours
+    two_factor_enabled, paused, bio, rate, availability, weekly_hours, languages
   } = fields;
   const sql = `
     UPDATE providers SET
@@ -600,8 +605,9 @@ async function updateProviderProfile(provider_id, fields){
       bio = COALESCE($13, bio),
       rate = COALESCE($14, rate),
       availability = COALESCE($15, availability),
-      weekly_hours = COALESCE($16, weekly_hours)
-    WHERE id=$17 OR user_id=$17
+      weekly_hours = COALESCE($16, weekly_hours),
+      languages = COALESCE($17, languages)
+    WHERE id=$18 OR user_id=$18
     RETURNING *
   `;
   const params = [
@@ -621,6 +627,7 @@ async function updateProviderProfile(provider_id, fields){
     rate || null,
     availability ? (typeof availability === 'string' ? availability : JSON.stringify(availability)) : null,
     weekly_hours !== undefined && weekly_hours !== null ? Number(weekly_hours) : null,
+    languages || null,
     provider_id
   ];
   const result = await pool.query(sql, params);
@@ -631,7 +638,7 @@ async function getPendingApplications(){
   if(!pool) return [];
   const sql = `
     SELECT pa.id, pa.user_id, u.name, u.email, u.phone, u.city, u.province,
-           pa.experience, pa.certifications, pa.age_groups, pa.availability, pa.payout_method, pa.daily_payouts_member, pa.created_at
+           pa.experience, pa.certifications, pa.languages, pa.age_groups, pa.availability, pa.payout_method, pa.daily_payouts_member, pa.created_at
     FROM provider_applications pa
     JOIN users u ON pa.user_id = u.id
     WHERE u.type = 'provider'
@@ -645,7 +652,7 @@ async function getApplicationDetails(applicationId){
   if(!pool) return null;
   const sql = `
     SELECT pa.id, pa.user_id, u.name, u.email, u.phone, u.city, u.province,
-           pa.experience, pa.certifications, pa.age_groups, pa.availability, pa.payout_method, pa.daily_payouts_member, pa.created_at
+           pa.experience, pa.certifications, pa.languages, pa.age_groups, pa.availability, pa.payout_method, pa.daily_payouts_member, pa.created_at
     FROM provider_applications pa
     JOIN users u ON pa.user_id = u.id
     WHERE pa.id = $1
@@ -683,26 +690,26 @@ async function approveApplication(applicationId){
       UPDATE providers SET
         name = $1, email = $2, phone = $3, city = $4, province = $5,
         experience = $6, certifications = $7, age_groups = $8::jsonb, 
-        availability = $9::jsonb, approved_at = NOW()
-      WHERE user_id = $10
+        availability = $9::jsonb, languages = $10, approved_at = NOW()
+      WHERE user_id = $11
       RETURNING id
     `;
     const result = await pool.query(updateSql, [
       app.name, app.email, app.phone, app.city, app.province,
-      app.experience, app.certifications, ageGroupsJson, availabilityJson, app.user_id
+      app.experience, app.certifications, ageGroupsJson, availabilityJson, app.languages || null, app.user_id
     ]);
     providerId = result.rows[0]?.id;
   } else {
     // Insert new provider
     console.log('[DB] Creating new provider for user:', app.user_id);
     const insertSql = `
-      INSERT INTO providers (user_id, name, email, phone, city, province, experience, certifications, age_groups, availability)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)
+      INSERT INTO providers (user_id, name, email, phone, city, province, experience, certifications, age_groups, availability, languages)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11)
       RETURNING id
     `;
     const result = await pool.query(insertSql, [
       app.user_id, app.name, app.email, app.phone, app.city, app.province,
-      app.experience, app.certifications, ageGroupsJson, availabilityJson
+      app.experience, app.certifications, ageGroupsJson, availabilityJson, app.languages || null
     ]);
     providerId = result.rows[0]?.id;
   }
