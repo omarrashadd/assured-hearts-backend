@@ -247,9 +247,11 @@ router.get('/provider/:provider_id', async (req, res) => {
 });
 
 // Public list of providers (basic info)
-router.get('/providers', async (_req, res) => {
+router.get('/providers', async (req, res) => {
   try{
-    const providers = await require('../db').listProviders();
+    const city = req.query?.city ? String(req.query.city).trim() : null;
+    const province = req.query?.province ? String(req.query.province).trim() : null;
+    const providers = await require('../db').listProviders({ city, province });
     return res.json({ providers });
   }catch(err){
     console.error('List providers failed:', err);

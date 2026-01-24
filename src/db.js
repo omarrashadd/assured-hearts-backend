@@ -504,15 +504,27 @@ async function getProviderIdForUser(user_id){
   return result.rows[0]?.id || null;
 }
 
-async function listProviders(){
+async function listProviders({ city = null, province = null } = {}){
   if(!pool) return [];
+  const conditions = [];
+  const params = [];
+  if(city){
+    params.push(city);
+    conditions.push(`LOWER(pr.city) = LOWER($${params.length})`);
+  }
+  if(province){
+    params.push(province);
+    conditions.push(`LOWER(pr.province) = LOWER($${params.length})`);
+  }
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `
     SELECT pr.id, pr.user_id, pr.name, pr.city, pr.province, pr.bio, pr.rate, pr.availability, pr.weekly_hours
     FROM providers pr
+    ${whereClause}
     ORDER BY pr.created_at DESC
     LIMIT 50
   `;
-  const result = await pool.query(sql);
+  const result = await pool.query(sql, params);
   return result.rows || [];
 }
 
