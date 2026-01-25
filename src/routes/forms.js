@@ -249,7 +249,7 @@ router.get('/provider/:provider_id', async (req, res) => {
     const resolvedId = await getProviderIdForUser(providerId) || providerId;
     let profile = await getProviderProfile(resolvedId);
     if(!profile){
-      profile = { id: resolvedId, user_id: providerId, name: 'Caregiver', email: null, phone: null, city: null, province: null };
+      profile = { id: null, provider_id: null, user_id: providerId, name: 'Caregiver', email: null, phone: null, city: null, province: null };
     }
     const sessions = await getProviderSessions(resolvedId);
     const stats = await getProviderStats(resolvedId);
@@ -295,8 +295,14 @@ router.put('/provider/:provider_id', async (req, res) => {
   const providerId = parseInt(req.params.provider_id);
   if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
   try{
-    const updated = await updateProviderProfile(providerId, req.body || {});
-    if(!updated) return res.status(404).json({ error: 'Provider not found' });
+    // Allow calling with either providers.id or users.id
+    const resolvedId = await getProviderIdForUser(providerId) || providerId;
+    // If still invalid or no provider row, block update with 404
+    if(!resolvedId || Number.isNaN(resolvedId)){
+      return res.status(404).json({ error: 'Provider not found or not approved yet' });
+    }
+    const updated = await updateProviderProfile(resolvedId, req.body || {});
+    if(!updated) return res.status(404).json({ error: 'Provider not found or not approved yet' });
     return res.json({ profile: updated });
   }catch(err){
     console.error('Provider profile update failed:', err);
