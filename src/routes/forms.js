@@ -295,9 +295,12 @@ router.put('/provider/:provider_id', async (req, res) => {
   const providerId = parseInt(req.params.provider_id);
   if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
   try{
-    // Allow calling with either providers.id or users.id
-    const resolvedId = await getProviderIdForUser(providerId) || providerId;
-    // If still invalid or no provider row, block update with 404
+    // Resolve to provider row: prefer providers.id, otherwise look up by user_id
+    const { rows: byIdRows } = await pool.query('SELECT id FROM providers WHERE id=$1', [providerId]);
+    let resolvedId = byIdRows[0]?.id || null;
+    if(!resolvedId){
+      resolvedId = await getProviderIdForUser(providerId);
+    }
     if(!resolvedId || Number.isNaN(resolvedId)){
       return res.status(404).json({ error: 'Provider not found or not approved yet' });
     }
