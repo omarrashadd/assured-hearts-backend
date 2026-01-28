@@ -2,7 +2,7 @@ console.log('DEPLOYMENT TEST: forms.js loaded');
 
 const express = require('express');
 const bcrypt = require('bcrypt');
-const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser, insertMessage, getMessagesForUser, markMessagesRead } = require('../db');
+const { createParentUser, createProviderUser, insertProviderApplication, insertChildProfile, findUserByEmail, insertWaitlistEntry, getParentChildren, getParentProfile, updateChild, getOrCreateChild, insertChildcareRequest, getParentRequests, getParentSessions, getPendingApplications, getApplicationDetails, approveApplication, pool, getChildById, incrementReferralCount, getProviderProfile, getProviderSessions, getProviderStats, getProviderRequests, createSessionFromRequest, listProviders, getProviderIdForUser, updateProviderProfile, insertMessage, getMessagesForUser, markMessagesRead } = require('../db');
 const { calculatePricing, getPricingConfig } = require('../pricing');
 
 const router = express.Router();
@@ -301,8 +301,11 @@ router.put('/provider/:provider_id', async (req, res) => {
     if(!updated) return res.status(404).json({ error: 'Provider not found or not approved yet' });
     return res.json({ profile: updated });
   }catch(err){
-    console.error('Provider profile update failed:', err);
-    return res.status(500).json({ error: 'Failed to update provider profile' });
+    console.error('Provider profile update failed:', err.message || err, err.detail || '', err.code || '');
+    return res.status(500).json({
+      error: 'Failed to update provider profile',
+      detail: err.detail || err.message || 'Unknown error'
+    });
   }
 });
 
