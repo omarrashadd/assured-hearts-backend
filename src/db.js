@@ -36,7 +36,6 @@ async function init(){
       city TEXT,
       province TEXT,
       address_line1 TEXT,
-      address_line2 TEXT,
       postal_code TEXT,
       availability JSONB,
       age_groups JSONB,
@@ -69,17 +68,10 @@ async function init(){
     );`;
   const createProviders = `
     CREATE TABLE IF NOT EXISTS providers (
-      id SERIAL PRIMARY KEY,
-      user_id INTEGER UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-      name TEXT NOT NULL,
+      id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
       first_name TEXT,
       last_name TEXT,
-      email TEXT NOT NULL,
-      phone TEXT,
-      city TEXT,
-      province TEXT,
       address_line1 TEXT,
-      address_line2 TEXT,
       postal_code TEXT,
       payout_method TEXT,
       certifications TEXT,
@@ -145,7 +137,7 @@ async function init(){
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS city TEXT`);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS province TEXT`);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS address_line1 TEXT`);
-    await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS address_line2 TEXT`);
+    await pool.query(`ALTER TABLE provider_applications DROP COLUMN IF EXISTS address_line2`);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS postal_code TEXT`);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS payout_method TEXT`);
     await pool.query(`ALTER TABLE provider_applications ADD COLUMN IF NOT EXISTS consent_background_check BOOLEAN DEFAULT false`);
@@ -182,11 +174,18 @@ async function init(){
     await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS weekly_hours`);
     await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS rating`);
     await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS ratings`);
-    // Provider profile enrichment
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS user_id`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS name`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS email`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS phone`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS city`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS province`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS password_hash`);
+    await pool.query(`ALTER TABLE providers DROP COLUMN IF EXISTS address_line2`);
+    // Provider profile columns
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS first_name TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS last_name TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS address_line1 TEXT`);
-    await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS address_line2 TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS postal_code TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS payout_method TEXT`);
     await pool.query(`ALTER TABLE providers ADD COLUMN IF NOT EXISTS consent_background_check BOOLEAN DEFAULT false`);
@@ -251,15 +250,15 @@ async function createProviderUser({ name, email, phone, password, city, province
   return result.rows[0]?.id;
 }
 
-async function insertProviderApplication({ user_id, first_name, last_name, phone, city, province, address_line1, address_line2, postal_code, availability, age_groups, certifications, languages, payout_method, consent_background_check, consent_terms, consent_provider_agreement }){
+async function insertProviderApplication({ user_id, first_name, last_name, phone, city, province, address_line1, postal_code, availability, age_groups, certifications, languages, payout_method, consent_background_check, consent_terms, consent_provider_agreement }){
   if(!pool) return;
   const sql = `INSERT INTO provider_applications(
       user_id, first_name, last_name, phone, city, province,
-      address_line1, address_line2, postal_code,
+      address_line1, postal_code,
       availability, age_groups, certifications, languages, payout_method,
       consent_background_check, consent_terms, consent_provider_agreement
     ) VALUES(
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16
     ) RETURNING id`;
   const params = [
     user_id,
@@ -269,7 +268,6 @@ async function insertProviderApplication({ user_id, first_name, last_name, phone
     city || null,
     province || null,
     address_line1 || null,
-    address_line2 || null,
     postal_code || null,
     availability ? JSON.stringify(availability) : null,
     age_groups ? JSON.stringify(age_groups) : null,
@@ -314,7 +312,12 @@ async function findUserByEmail(email){
 
 async function countProvidersByCity(city){
   if(!pool) return 0;
-  const sql = "SELECT COUNT(*) AS c FROM providers WHERE LOWER(city) = LOWER($1)";
+  const sql = `
+    SELECT COUNT(*) AS c
+    FROM providers pr
+    JOIN users u ON pr.id = u.id
+    WHERE LOWER(u.city) = LOWER($1)
+  `;
   const result = await pool.query(sql, [city]);
   return Number(result.rows[0]?.c || 0);
 }
@@ -449,12 +452,13 @@ async function getParentRequests(user_id){
            cr.start_at, cr.end_at, cr.provider_id,
            cr.care_type, cr.is_premium, cr.child_age, cr.pricing_province, cr.pricing_snapshot, cr.hourly_rate_cents,
            cr.payment_intent_id, cr.payment_status, cr.payment_amount_cents, cr.payment_currency,
-           p.user_id as provider_user_id,
-           CONCAT_WS(' ', c.first_name, c.last_name) as child_name
-           , p.name as provider_name
+           pr.id as provider_user_id,
+           CONCAT_WS(' ', c.first_name, c.last_name) as child_name,
+           COALESCE(NULLIF(CONCAT_WS(' ', pr.first_name, pr.last_name), ''), pu.name) as provider_name
     FROM childcare_requests cr
     LEFT JOIN children c ON cr.child_id = c.id
-    LEFT JOIN providers p ON cr.provider_id = p.id
+    LEFT JOIN providers pr ON cr.provider_id = pr.id
+    LEFT JOIN users pu ON pr.id = pu.id
     WHERE cr.parent_id=$1 
     ORDER BY cr.created_at DESC
   `;
@@ -499,9 +503,12 @@ async function getParentSessions(user_id){
   if(!pool) return [];
   const sql = `
     SELECT s.id, s.session_date, s.start_time, s.end_time, s.status, 
-           p.id as provider_id, p.user_id as provider_user_id, p.name as provider_name, p.city as provider_city
+           pr.id as provider_id, pr.id as provider_user_id,
+           COALESCE(NULLIF(CONCAT_WS(' ', pr.first_name, pr.last_name), ''), pu.name) as provider_name,
+           pu.city as provider_city
     FROM sessions s
-    LEFT JOIN providers p ON s.provider_id = p.id
+    LEFT JOIN providers pr ON s.provider_id = pr.id
+    LEFT JOIN users pu ON pr.id = pu.id
     WHERE s.parent_id=$1 AND s.session_date >= CURRENT_DATE
     ORDER BY s.session_date ASC, s.start_time ASC
   `;
@@ -543,23 +550,30 @@ async function getMessagesForUser(user_id){
   return res.rows || [];
 }
 
-async function getProviderProfile(provider_id){
+async function getProviderProfile(user_id){
   if(!pool) return null;
   const sql = `
-    SELECT pr.id, pr.user_id, pr.name, pr.first_name, pr.last_name, pr.email, pr.phone, pr.city, pr.province,
-           pr.address_line1, pr.address_line2, pr.postal_code, pr.payout_method,
-           pr.availability, pr.languages, pr.certifications,
-           pr.consent_background_check, pr.consent_terms, pr.consent_provider_agreement
-    FROM providers pr
-    WHERE pr.id = $1 OR pr.user_id = $1
+    SELECT u.id,
+           u.id AS provider_id,
+           COALESCE(NULLIF(CONCAT_WS(' ', pr.first_name, pr.last_name), ''), u.name) AS name,
+           u.email, u.phone, u.city, u.province,
+           pr.first_name, pr.last_name,
+           pr.address_line1, pr.postal_code, pr.payout_method,
+           pr.availability, pr.languages, pr.certifications, pr.age_groups,
+           pr.consent_background_check, pr.consent_terms, pr.consent_provider_agreement,
+           pr.approved_at, pr.created_at,
+           (pr.id IS NOT NULL) AS approved
+    FROM users u
+    LEFT JOIN providers pr ON pr.id = u.id
+    WHERE u.id = $1 AND u.type = 'provider'
   `;
-  const result = await pool.query(sql, [provider_id]);
+  const result = await pool.query(sql, [user_id]);
   return result.rows[0] || null;
 }
 
 async function getProviderIdForUser(user_id){
   if(!pool) return null;
-  const sql = 'SELECT id FROM providers WHERE user_id=$1 LIMIT 1';
+  const sql = 'SELECT id FROM providers WHERE id=$1 LIMIT 1';
   const result = await pool.query(sql, [user_id]);
   return result.rows[0]?.id || null;
 }
@@ -570,16 +584,21 @@ async function listProviders({ city = null, province = null } = {}){
   const params = [];
   if(city){
     params.push(city);
-    conditions.push(`LOWER(pr.city) = LOWER($${params.length})`);
+    conditions.push(`LOWER(u.city) = LOWER($${params.length})`);
   }
   if(province){
     params.push(province);
-    conditions.push(`LOWER(pr.province) = LOWER($${params.length})`);
+    conditions.push(`LOWER(u.province) = LOWER($${params.length})`);
   }
   const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
   const sql = `
-    SELECT pr.id, pr.user_id, pr.name, pr.first_name, pr.last_name, pr.city, pr.province, pr.availability, pr.languages, pr.certifications
+    SELECT pr.id,
+           u.id AS user_id,
+           COALESCE(NULLIF(CONCAT_WS(' ', pr.first_name, pr.last_name), ''), u.name) AS name,
+           u.city, u.province,
+           pr.availability, pr.languages, pr.certifications, pr.age_groups
     FROM providers pr
+    JOIN users u ON pr.id = u.id
     ${whereClause}
     ORDER BY pr.created_at DESC
     LIMIT 50
@@ -635,60 +654,75 @@ async function getProviderStats(provider_id){
   return stats;
 }
 
-async function updateProviderProfile(provider_id, fields){
+async function updateProviderProfile(user_id, fields){
   if(!pool) return null;
   const {
-    name, phone, email, city, province,
-    address_line1, address_line2, postal_code,
+    name, phone, city, province,
+    address_line1, postal_code,
     first_name, last_name,
     payout_method,
     consent_background_check, consent_terms, consent_provider_agreement,
-    availability, languages, certifications
+    availability, languages, certifications, age_groups
   } = fields;
-  const sql = `
-    UPDATE providers SET
-      name = COALESCE($1, name),
-      phone = COALESCE($2, phone),
-      email = COALESCE($3, email),
-      city = COALESCE($4, city),
-      province = COALESCE($5, province),
-      address_line1 = COALESCE($6, address_line1),
-      address_line2 = COALESCE($7, address_line2),
-      postal_code = COALESCE($8, postal_code),
-      first_name = COALESCE($9, first_name),
-      last_name = COALESCE($10, last_name),
-      payout_method = COALESCE($11, payout_method),
-      consent_background_check = COALESCE($12, consent_background_check),
-      consent_terms = COALESCE($13, consent_terms),
-      consent_provider_agreement = COALESCE($14, consent_provider_agreement),
-      availability = COALESCE($15, availability),
-      languages = COALESCE($16, languages),
-      certifications = COALESCE($17, certifications)
-    WHERE id=$18 OR user_id=$18
-    RETURNING *
-  `;
-  const params = [
-    name || null,
-    phone || null,
-    email || null,
-    city || null,
-    province || null,
-    address_line1 || null,
-    address_line2 || null,
-    postal_code || null,
-    first_name || null,
-    last_name || null,
-    payout_method || null,
-    typeof consent_background_check === 'boolean' ? consent_background_check : null,
-    typeof consent_terms === 'boolean' ? consent_terms : null,
-    typeof consent_provider_agreement === 'boolean' ? consent_provider_agreement : null,
-    availability ? (typeof availability === 'string' ? availability : JSON.stringify(availability)) : null,
-    languages || null,
-    certifications || null,
-    provider_id
-  ];
-  const result = await pool.query(sql, params);
-  return result.rows[0] || null;
+  const computedName = name || [first_name, last_name].filter(Boolean).join(' ') || null;
+  const availabilityJson = availability ? (typeof availability === 'string' ? availability : JSON.stringify(availability)) : null;
+  const ageGroupsJson = age_groups ? (typeof age_groups === 'string' ? age_groups : JSON.stringify(age_groups)) : null;
+  const client = await pool.connect();
+  try{
+    await client.query('BEGIN');
+    await client.query(
+      `UPDATE users SET
+        name = COALESCE($1, name),
+        phone = COALESCE($2, phone),
+        city = COALESCE($3, city),
+        province = COALESCE($4, province)
+       WHERE id = $5`,
+      [computedName, phone || null, city || null, province || null, user_id]
+    );
+    const providerResult = await client.query(
+      `UPDATE providers SET
+        first_name = COALESCE($1, first_name),
+        last_name = COALESCE($2, last_name),
+        address_line1 = COALESCE($3, address_line1),
+        postal_code = COALESCE($4, postal_code),
+        payout_method = COALESCE($5, payout_method),
+        certifications = COALESCE($6, certifications),
+        availability = COALESCE($7::jsonb, availability),
+        languages = COALESCE($8, languages),
+        age_groups = COALESCE($9::jsonb, age_groups),
+        consent_background_check = COALESCE($10, consent_background_check),
+        consent_terms = COALESCE($11, consent_terms),
+        consent_provider_agreement = COALESCE($12, consent_provider_agreement)
+       WHERE id = $13
+       RETURNING id`,
+      [
+        first_name || null,
+        last_name || null,
+        address_line1 || null,
+        postal_code || null,
+        payout_method || null,
+        certifications || null,
+        availabilityJson,
+        languages || null,
+        ageGroupsJson,
+        typeof consent_background_check === 'boolean' ? consent_background_check : null,
+        typeof consent_terms === 'boolean' ? consent_terms : null,
+        typeof consent_provider_agreement === 'boolean' ? consent_provider_agreement : null,
+        user_id
+      ]
+    );
+    if(!providerResult.rows[0]){
+      await client.query('ROLLBACK');
+      return null;
+    }
+    await client.query('COMMIT');
+    return getProviderProfile(user_id);
+  }catch(err){
+    await client.query('ROLLBACK');
+    throw err;
+  }finally{
+    client.release();
+  }
 }
 
 async function getPendingApplications(){
@@ -696,7 +730,7 @@ async function getPendingApplications(){
   const sql = `
     SELECT pa.id, pa.user_id, u.name, u.email, u.phone, u.city, u.province,
            pa.first_name, pa.last_name, pa.phone, pa.city, pa.province,
-           pa.address_line1, pa.address_line2, pa.postal_code,
+           pa.address_line1, pa.postal_code,
            pa.certifications, pa.languages, pa.age_groups, pa.availability, pa.payout_method,
            pa.consent_background_check, pa.consent_terms, pa.consent_provider_agreement,
            pa.created_at
@@ -714,7 +748,7 @@ async function getApplicationDetails(applicationId){
   const sql = `
     SELECT pa.id, pa.user_id, u.name, u.email, u.phone, u.city, u.province,
            pa.first_name, pa.last_name, pa.phone, pa.city, pa.province,
-           pa.address_line1, pa.address_line2, pa.postal_code,
+           pa.address_line1, pa.postal_code,
            pa.certifications, pa.languages, pa.age_groups, pa.availability, pa.payout_method,
            pa.consent_background_check, pa.consent_terms, pa.consent_provider_agreement,
            pa.created_at
@@ -752,8 +786,19 @@ async function approveApplication(applicationId){
   const firstNameFinal = app.first_name || splitName.first;
   const lastNameFinal = app.last_name || splitName.last;
   
+  await pool.query(
+    `UPDATE users SET
+      name = COALESCE($1, name),
+      email = COALESCE($2, email),
+      phone = COALESCE($3, phone),
+      city = COALESCE($4, city),
+      province = COALESCE($5, province)
+     WHERE id = $6`,
+    [displayName, app.email, app.phone, app.city, app.province, app.user_id]
+  );
+
   // Check if provider already exists for this user
-  const checkSql = 'SELECT id FROM providers WHERE user_id = $1';
+  const checkSql = 'SELECT id FROM providers WHERE id = $1';
   const existing = await pool.query(checkSql, [app.user_id]);
   
   let providerId;
@@ -763,21 +808,19 @@ async function approveApplication(applicationId){
     console.log('[DB] Updating existing provider:', existing.rows[0].id);
     const updateSql = `
       UPDATE providers SET
-        name = $1, first_name = $2, last_name = $3,
-        email = $4, phone = $5, city = $6, province = $7,
-        address_line1 = $8, address_line2 = $9, postal_code = $10,
-        payout_method = $11,
-        certifications = $12, age_groups = $13::jsonb, 
-        availability = $14::jsonb, languages = $15,
-        consent_background_check = $16, consent_terms = $17, consent_provider_agreement = $18,
+        first_name = $1, last_name = $2,
+        address_line1 = $3, postal_code = $4,
+        payout_method = $5,
+        certifications = $6, age_groups = $7::jsonb,
+        availability = $8::jsonb, languages = $9,
+        consent_background_check = $10, consent_terms = $11, consent_provider_agreement = $12,
         approved_at = NOW()
-      WHERE user_id = $19
+      WHERE id = $13
       RETURNING id
     `;
     const result = await pool.query(updateSql, [
-      displayName, firstNameFinal || null, lastNameFinal || null,
-      app.email, app.phone, app.city, app.province,
-      app.address_line1 || null, app.address_line2 || null, app.postal_code || null,
+      firstNameFinal || null, lastNameFinal || null,
+      app.address_line1 || null, app.postal_code || null,
       app.payout_method || null,
       app.certifications, ageGroupsJson, availabilityJson, app.languages || null,
       app.consent_background_check === true, app.consent_terms === true, app.consent_provider_agreement === true,
@@ -789,19 +832,17 @@ async function approveApplication(applicationId){
     console.log('[DB] Creating new provider for user:', app.user_id);
     const insertSql = `
       INSERT INTO providers (
-        user_id, name, first_name, last_name,
-        email, phone, city, province,
-        address_line1, address_line2, postal_code, payout_method,
+        id, first_name, last_name,
+        address_line1, postal_code, payout_method,
         certifications, age_groups, availability, languages,
         consent_background_check, consent_terms, consent_provider_agreement
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb, $15::jsonb, $16, $17, $18, $19)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, $10, $11, $12, $13)
       RETURNING id
     `;
     const result = await pool.query(insertSql, [
-      app.user_id, displayName, firstNameFinal || null, lastNameFinal || null,
-      app.email, app.phone, app.city, app.province,
-      app.address_line1 || null, app.address_line2 || null, app.postal_code || null, app.payout_method || null,
+      app.user_id, firstNameFinal || null, lastNameFinal || null,
+      app.address_line1 || null, app.postal_code || null, app.payout_method || null,
       app.certifications, ageGroupsJson, availabilityJson, app.languages || null,
       app.consent_background_check === true, app.consent_terms === true, app.consent_provider_agreement === true
     ]);

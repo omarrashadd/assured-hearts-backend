@@ -71,7 +71,6 @@ router.post('/provider', async (req, res) => {
   const province = meta?.province || req.body.province || null;
   const languages = meta?.languages || req.body.languages || null;
   const address_line1 = meta?.address_line1 || req.body.address_line1 || null;
-  const address_line2 = meta?.address_line2 || req.body.address_line2 || null;
   const postal_code = meta?.postal_code || req.body.postal_code || null;
   const payout_method = meta?.payout_method || req.body.payout_method || null;
   const consent_background_check = meta?.consent_background_check ?? meta?.consentBackgroundCheck ?? req.body.consent_background_check ?? req.body.consentBackgroundCheck;
@@ -94,7 +93,6 @@ router.post('/provider', async (req, res) => {
       city,
       province,
       address_line1,
-      address_line2,
       postal_code,
       availability: meta?.availability,
       age_groups,
@@ -243,17 +241,17 @@ router.get('/child/:child_id', async (req, res) => {
 
 // Provider dashboard
 router.get('/provider/:provider_id', async (req, res) => {
-  const providerId = parseInt(req.params.provider_id);
-  if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
+  const userId = parseInt(req.params.provider_id);
+  if(!userId || isNaN(userId)) return res.status(400).json({ error: 'Invalid provider ID' });
   try{
-    const resolvedId = await getProviderIdForUser(providerId) || providerId;
-    let profile = await getProviderProfile(resolvedId);
+    const profile = await getProviderProfile(userId);
     if(!profile){
-      profile = { id: null, provider_id: null, user_id: providerId, name: 'Caregiver', email: null, phone: null, city: null, province: null };
+      return res.status(404).json({ error: 'Provider not found' });
     }
-    const sessions = await getProviderSessions(resolvedId);
-    const stats = await getProviderStats(resolvedId);
-    const requests = await getProviderRequests(resolvedId);
+    const providerId = profile.approved ? profile.id : null;
+    const sessions = providerId ? await getProviderSessions(providerId) : [];
+    const stats = providerId ? await getProviderStats(providerId) : { active:0, pending:0, hours_scheduled:0, hours_month:0, earnings:0, tips:0 };
+    const requests = providerId ? await getProviderRequests(providerId) : [];
     // Fallback: treat accepted requests as pseudo-sessions for UI messaging
     const pseudoSessions = (requests || []).filter(r => (r.status||'').toLowerCase() === 'accepted').map(r => {
       const startDate = r.start_at ? new Date(r.start_at) : null;
@@ -292,19 +290,14 @@ router.get('/providers', async (req, res) => {
 
 // Update provider profile
 router.put('/provider/:provider_id', async (req, res) => {
-  const providerId = parseInt(req.params.provider_id);
-  if(!providerId || isNaN(providerId)) return res.status(400).json({ error: 'Invalid provider ID' });
+  const userId = parseInt(req.params.provider_id);
+  if(!userId || isNaN(userId)) return res.status(400).json({ error: 'Invalid provider ID' });
   try{
-    // Resolve to provider row: prefer providers.id, otherwise look up by user_id
-    const { rows: byIdRows } = await pool.query('SELECT id FROM providers WHERE id=$1', [providerId]);
-    let resolvedId = byIdRows[0]?.id || null;
-    if(!resolvedId){
-      resolvedId = await getProviderIdForUser(providerId);
-    }
-    if(!resolvedId || Number.isNaN(resolvedId)){
+    const approvedId = await getProviderIdForUser(userId);
+    if(!approvedId){
       return res.status(404).json({ error: 'Provider not found or not approved yet' });
     }
-    const updated = await updateProviderProfile(resolvedId, req.body || {});
+    const updated = await updateProviderProfile(userId, req.body || {});
     if(!updated) return res.status(404).json({ error: 'Provider not found or not approved yet' });
     return res.json({ profile: updated });
   }catch(err){
@@ -393,10 +386,10 @@ router.post('/request', async (req, res) => {
     let finalProviderId = provider_id ? parseInt(provider_id) : null;
     let resolvedChildAge = null;
 
-    // If provider_id was sent as user_id, resolve to providers.id
+    // Resolve provider_id to an approved provider record (provider id == user id)
     if(finalProviderId){
       const resolved = await getProviderIdForUser(finalProviderId);
-      if(resolved) finalProviderId = resolved;
+      finalProviderId = resolved || null;
     }
     
     // If a new child name is provided and no child_id, create the child first
@@ -489,14 +482,11 @@ router.post('/request/:id/respond', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM childcare_requests WHERE id=$1', [requestId]);
     const reqRow = rows[0];
     if(!reqRow) return res.status(404).json({ error: 'Request not found' });
-    // Resolve provider_id from either the request body (may be user_id) or existing row
-    let finalProviderId = provider_id || reqRow.provider_id;
-    if(!finalProviderId && provider_id){
-      const resolved = await getProviderIdForUser(provider_id);
-      finalProviderId = resolved || provider_id;
-    } else if(finalProviderId && provider_id){
-      const resolved = await getProviderIdForUser(provider_id);
-      finalProviderId = resolved || finalProviderId;
+    // Resolve provider_id from either the request body (user id) or existing row
+    let finalProviderId = provider_id || reqRow.provider_id || null;
+    if(finalProviderId){
+      const resolved = await getProviderIdForUser(finalProviderId);
+      finalProviderId = resolved || null;
     }
 
     if(action === 'accept'){
