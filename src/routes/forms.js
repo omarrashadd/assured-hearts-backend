@@ -73,6 +73,10 @@ router.post('/provider', async (req, res) => {
   const address_line1 = meta?.address_line1 || req.body.address_line1 || null;
   const postal_code = meta?.postal_code || req.body.postal_code || null;
   const payout_method = meta?.payout_method || req.body.payout_method || null;
+  const about = meta?.about || req.body.about || null;
+  const photo_url = meta?.photo_url || req.body.photo_url || null;
+  const cpr_certified = meta?.cpr_certified ?? meta?.cprCertified ?? req.body.cpr_certified ?? req.body.cprCertified ?? meta?.has_cpr ?? req.body.has_cpr;
+  const caregiver_insurance = meta?.caregiver_insurance ?? meta?.caregiverInsurance ?? req.body.caregiver_insurance ?? req.body.caregiverInsurance;
   const consent_background_check = meta?.consent_background_check ?? meta?.consentBackgroundCheck ?? req.body.consent_background_check ?? req.body.consentBackgroundCheck;
   const consent_terms = meta?.consent_terms ?? meta?.consentTerms ?? req.body.consent_terms ?? req.body.consentTerms;
   const consent_provider_agreement = meta?.consent_provider_agreement ?? meta?.consentProviderAgreement ?? req.body.consent_provider_agreement ?? req.body.consentProviderAgreement;
@@ -97,6 +101,10 @@ router.post('/provider', async (req, res) => {
       availability: meta?.availability,
       age_groups,
       certifications,
+      about,
+      photo_url,
+      cpr_certified: cpr_certified === true || cpr_certified === 'true' || cpr_certified === 1 || cpr_certified === '1',
+      caregiver_insurance: caregiver_insurance === true || caregiver_insurance === 'true' || caregiver_insurance === 1 || caregiver_insurance === '1',
       languages,
       payout_method,
       consent_background_check: consent_background_check === true || consent_background_check === 'true' || consent_background_check === 1 || consent_background_check === '1',
